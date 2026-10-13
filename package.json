@@ -6,8 +6,19 @@
         "build": "vite build"
     },
     "devDependencies": {
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "@vitejs/plugin-react": "^4.3.4",
         "axios": "^1.6.4",
         "laravel-vite-plugin": "^1.0.0",
+        "typescript": "^7.0.2",
         "vite": "^5.0.0"
+    },
+    "dependencies": {
+        "react": "^19.3.0",
+        "react-dom": "^19.3.0"
+    },
+    "allowScripts": {
+        "esbuild@0.21.5": true
     }
 }
