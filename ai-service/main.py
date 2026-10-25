@@ -14,8 +14,15 @@ MAX_ATTEMPTS = 5
 
 def build_crew() -> Crew:
     task = Task(
-        description="{request}",
-        expected_output="A clear, consolidated answer for the agency employee.",
+        description=(
+            "{request}\n\n"
+            "Previous feedback from this client (apply it, ignore if none):\n"
+            "{past_feedback}"
+        ),
+        expected_output=(
+            "Only the final deliverable for the agency employee, "
+            "with no introduction or closing remarks."
+        ),
     )
 
     return Crew(
@@ -27,12 +34,17 @@ def build_crew() -> Crew:
     )
 
 
-def run_with_retry(request: str):
+def run_with_retry(request: str, past_feedback: str = ""):
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             # Build a fresh crew on each attempt to avoid stale state
             crew = build_crew()
-            return crew.kickoff(inputs={"request": request})
+            return crew.kickoff(
+                inputs={
+                    "request": request,
+                    "past_feedback": past_feedback or "No previous feedback.",
+                }
+            )
         except Exception as e:
             print(f"\n[retry] Attempt {attempt}/{MAX_ATTEMPTS} failed: {str(e)[:120]}")
             if attempt == MAX_ATTEMPTS:
