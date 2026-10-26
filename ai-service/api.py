@@ -34,6 +34,17 @@ class FeedbackRequest(BaseModel):
     feedback: str = ""
 
 
+class ProfileRequest(BaseModel):
+    company_id: int
+    client_id: int
+    client_name: str = ""
+    industry: str = ""
+    brand_tone: str = ""
+    audience: str = ""
+    platforms: str = ""
+    avoid: str = ""
+
+
 @app.get("/", include_in_schema=False)
 def root():
     return RedirectResponse(url="/docs")
@@ -44,13 +55,29 @@ def health():
     return {"status": "ok"}
 
 
+@app.put("/profile")
+def save_profile(body: ProfileRequest):
+    """Create or fully replace a client's profile (semantic memory)."""
+    fields = body.model_dump(exclude={"company_id", "client_id"})
+    memory.save_profile(body.company_id, body.client_id, **fields)
+    return {"saved": True}
+
+
+@app.get("/profile")
+def get_profile(company_id: int, client_id: int):
+    return {"profile": memory.get_profile(company_id, client_id)}
+
+
 @app.post("/run")
 def run(body: RunRequest):
     remembered = memory.get_recent_feedback(body.company_id, body.client_id)
     combined = "\n".join(p for p in (remembered, body.past_feedback) if p)
+    profile = memory.get_profile(body.company_id, body.client_id)
 
     try:
-        result = run_with_retry(body.request, combined, body.language)
+        result = run_with_retry(
+            body.request, combined, body.language, client_profile=profile
+        )
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:300])
 
@@ -67,9 +94,12 @@ def chat(body: ChatRequest):
 
     history = memory.get_conversation(conversation_id, body.company_id)  # short-term
     remembered = memory.get_recent_feedback(body.company_id, body.client_id)  # long-term
+    profile = memory.get_profile(body.company_id, body.client_id)  # semantic
 
     try:
-        result = run_with_retry(body.message, remembered, body.language, history)
+        result = run_with_retry(
+            body.message, remembered, body.language, history, profile
+        )
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:300])
 

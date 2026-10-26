@@ -39,6 +39,23 @@ def _connect() -> sqlite3.Connection:
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
+
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS client_profiles (
+            company_id INTEGER NOT NULL,
+            client_id INTEGER NOT NULL,
+            client_name TEXT NOT NULL DEFAULT '',
+            industry TEXT NOT NULL DEFAULT '',
+            brand_tone TEXT NOT NULL DEFAULT '',
+            audience TEXT NOT NULL DEFAULT '',
+            platforms TEXT NOT NULL DEFAULT '',
+            avoid TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (company_id, client_id)
+        )
+        """
     )
     return conn
 
@@ -103,3 +120,41 @@ def get_conversation(conversation_id: str, company_id: int, limit: int = 10) -> 
         ).fetchall()
     rows.reverse()
     return "\n".join(f"{r['role']}: {r['content'][:800]}" for r in rows)
+
+PROFILE_LABELS = {
+    "client_name": "Client name",
+    "industry": "Industry",
+    "brand_tone": "Brand tone",
+    "audience": "Target audience",
+    "platforms": "Platforms",
+    "avoid": "Never use / avoid",
+}
+
+
+def save_profile(company_id: int, client_id: int, **fields: str) -> None:
+    """Create or fully replace the profile of one client."""
+    cols = list(PROFILE_LABELS)
+    values = [fields.get(c, "") for c in cols]
+    with closing(_connect()) as conn:
+        conn.execute(
+            f"INSERT INTO client_profiles (company_id, client_id, {', '.join(cols)}) "
+            f"VALUES (?, ?, {', '.join('?' for _ in cols)}) "
+            f"ON CONFLICT(company_id, client_id) DO UPDATE SET "
+            f"{', '.join(f'{c} = excluded.{c}' for c in cols)}",
+            (company_id, client_id, *values),
+        )
+        conn.commit()
+
+
+def get_profile(company_id: int, client_id: int) -> str:
+    """Client profile as plain text, or '' if none exists."""
+    with closing(_connect()) as conn:
+        row = conn.execute(
+            "SELECT * FROM client_profiles WHERE company_id = ? AND client_id = ?",
+            (company_id, client_id),
+        ).fetchone()
+    if not row:
+        return ""
+    return "\n".join(
+        f"- {label}: {row[col]}" for col, label in PROFILE_LABELS.items() if row[col]
+    )

@@ -15,6 +15,8 @@ MAX_ATTEMPTS = 5
 def build_crew() -> Crew:
     task = Task(
         description=(
+            "Client profile (brand rules - always follow them):\n"
+            "{client_profile}\n\n"
             "Conversation so far (use it to resolve references like 'the second one'):\n"
             "{conversation_history}\n\n"
             "Current request: {request}\n\n"
@@ -42,6 +44,7 @@ def run_with_retry(
     past_feedback: str = "",
     language: str = "English",
     conversation_history: str = "",
+    client_profile: str = "",
 ):
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
@@ -53,6 +56,7 @@ def run_with_retry(
                     "past_feedback": past_feedback or "No previous feedback.",
                     "language": language,
                     "conversation_history": conversation_history or "No previous messages.",
+                    "client_profile": client_profile or "No profile available.",
                 }
             )
         except Exception as e:
