@@ -1,6 +1,8 @@
+import uuid
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 import memory
@@ -17,11 +19,24 @@ class RunRequest(BaseModel):
     past_feedback: str = ""  # optional extra notes, added to what memory returns
 
 
+class ChatRequest(BaseModel):
+    company_id: int
+    client_id: int
+    message: str
+    conversation_id: str | None = None  # empty = start a new conversation
+    language: str = "English"
+
+
 class FeedbackRequest(BaseModel):
     company_id: int
     episode_id: int
     status: Literal["approved", "rejected"]
     feedback: str = ""
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/docs")
 
 
 @app.get("/health")
@@ -44,6 +59,32 @@ def run(body: RunRequest):
         body.company_id, body.client_id, body.request, output
     )
     return {"episode_id": episode_id, "result": output}
+
+
+@app.post("/chat")
+def chat(body: ChatRequest):
+    conversation_id = body.conversation_id or uuid.uuid4().hex
+
+    history = memory.get_conversation(conversation_id, body.company_id)  # short-term
+    remembered = memory.get_recent_feedback(body.company_id, body.client_id)  # long-term
+
+    try:
+        result = run_with_retry(body.message, remembered, body.language, history)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:300])
+
+    output = str(result)
+    # Save only after success, so failed runs don't pollute the conversation
+    memory.add_message(conversation_id, body.company_id, body.client_id, "user", body.message)
+    memory.add_message(conversation_id, body.company_id, body.client_id, "assistant", output)
+    episode_id = memory.save_episode(
+        body.company_id, body.client_id, body.message, output
+    )
+    return {
+        "conversation_id": conversation_id,
+        "episode_id": episode_id,
+        "result": output,
+    }
 
 
 @app.post("/feedback")

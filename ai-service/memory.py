@@ -27,6 +27,19 @@ def _connect() -> sqlite3.Connection:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id TEXT NOT NULL,
+            company_id INTEGER NOT NULL,
+            client_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
     return conn
 
 
@@ -66,3 +79,27 @@ def get_recent_feedback(company_id: int, client_id: int, limit: int = 5) -> str:
         f"- [{r['status']}] Request: {r['request']} | Feedback: {r['feedback'] or 'none'}"
         for r in rows
     )
+
+def add_message(
+    conversation_id: str, company_id: int, client_id: int, role: str, content: str
+) -> None:
+    with closing(_connect()) as conn:
+        conn.execute(
+            "INSERT INTO messages (conversation_id, company_id, client_id, role, content) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (conversation_id, company_id, client_id, role, content),
+        )
+        conn.commit()
+
+
+def get_conversation(conversation_id: str, company_id: int, limit: int = 10) -> str:
+    """Last `limit` messages of this conversation as plain text (oldest first)."""
+    with closing(_connect()) as conn:
+        rows = conn.execute(
+            "SELECT role, content FROM messages "
+            "WHERE conversation_id = ? AND company_id = ? "
+            "ORDER BY id DESC LIMIT ?",
+            (conversation_id, company_id, limit),
+        ).fetchall()
+    rows.reverse()
+    return "\n".join(f"{r['role']}: {r['content'][:800]}" for r in rows)

@@ -14,8 +14,10 @@ MAX_ATTEMPTS = 5
 
 def build_crew() -> Crew:
     task = Task(
-              description=(
-            "{request}\n\n"
+        description=(
+            "Conversation so far (use it to resolve references like 'the second one'):\n"
+            "{conversation_history}\n\n"
+            "Current request: {request}\n\n"
             "Write the final answer in this language: {language}.\n\n"
             "Previous feedback from this client (apply it, ignore if none):\n"
             "{past_feedback}"
@@ -35,16 +37,22 @@ def build_crew() -> Crew:
     )
 
 
-def run_with_retry(request: str, past_feedback: str = "", language: str = "English"):
+def run_with_retry(
+    request: str,
+    past_feedback: str = "",
+    language: str = "English",
+    conversation_history: str = "",
+):
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             # Build a fresh crew on each attempt to avoid stale state
             crew = build_crew()
             return crew.kickoff(
-                              inputs={
+                inputs={
                     "request": request,
                     "past_feedback": past_feedback or "No previous feedback.",
                     "language": language,
+                    "conversation_history": conversation_history or "No previous messages.",
                 }
             )
         except Exception as e:
