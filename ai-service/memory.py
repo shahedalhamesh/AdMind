@@ -57,6 +57,18 @@ def _connect() -> sqlite3.Connection:
         )
         """
     )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS client_rules (
+            company_id INTEGER NOT NULL,
+            client_id INTEGER NOT NULL,
+            rules TEXT NOT NULL DEFAULT '',
+            last_episode_id INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (company_id, client_id)
+        )
+        """
+    )
     return conn
 
 
@@ -157,4 +169,49 @@ def get_profile(company_id: int, client_id: int) -> str:
         return ""
     return "\n".join(
         f"- {label}: {row[col]}" for col, label in PROFILE_LABELS.items() if row[col]
-    )
+    ) 
+
+def get_episode(episode_id: int, company_id: int) -> dict | None:
+    """One episode (request + output), only if it belongs to this company."""
+    with closing(_connect()) as conn:
+        row = conn.execute(
+            "SELECT client_id, request, output FROM episodes "
+            "WHERE id = ? AND company_id = ?",
+            (episode_id, company_id),
+        ).fetchone()
+    return dict(row) if row else None 
+
+def get_rules(company_id: int, client_id: int) -> tuple[str, int]:
+    """Learned style rules for a client, and the last episode they were built from."""
+    with closing(_connect()) as conn:
+        row = conn.execute(
+            "SELECT rules, last_episode_id FROM client_rules "
+            "WHERE company_id = ? AND client_id = ?",
+            (company_id, client_id),
+        ).fetchone()
+    return (row["rules"], row["last_episode_id"]) if row else ("", 0)
+
+
+def save_rules(company_id: int, client_id: int, rules: str, last_episode_id: int) -> None:
+    with closing(_connect()) as conn:
+        conn.execute(
+            "INSERT INTO client_rules (company_id, client_id, rules, last_episode_id) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(company_id, client_id) DO UPDATE SET "
+            "rules = excluded.rules, last_episode_id = excluded.last_episode_id",
+            (company_id, client_id, rules, last_episode_id),
+        )
+        conn.commit()
+
+
+def get_unconsolidated_feedback(company_id: int, client_id: int) -> list[dict]:
+    """Rejected episodes with a written comment, not yet merged into the rules."""
+    _, last_id = get_rules(company_id, client_id)
+    with closing(_connect()) as conn:
+        rows = conn.execute(
+            "SELECT id, feedback FROM episodes "
+            "WHERE company_id = ? AND client_id = ? AND status = 'rejected' "
+            "AND feedback IS NOT NULL AND feedback != '' AND id > ? ORDER BY id",
+            (company_id, client_id, last_id),
+        ).fetchall()
+    return [dict(r) for r in rows]

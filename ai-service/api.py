@@ -1,16 +1,13 @@
-import logging
+from dataclasses import asdict
 import uuid
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-import knowledge
-import memory
+import memory_manager as mm
 from main import run_with_retry
-
-log = logging.getLogger("admind")
 
 app = FastAPI(title="AdMind AI Service")
 
@@ -55,14 +52,9 @@ class KnowledgeRequest(BaseModel):
     title: str
     text: str
 
-
-def _knowledge_context(company_id: int, client_id: int, query: str) -> str:
-    """Relevant document chunks for this client. Never breaks the request."""
-    try:
-        return knowledge.format_context(knowledge.search(company_id, client_id, query))
-    except Exception as e:
-        log.warning("knowledge search failed: %s", e)
-        return ""
+class ConsolidateRequest(BaseModel):
+    company_id: int
+    client_id: int
 
 
 @app.get("/", include_in_schema=False)
@@ -77,21 +69,21 @@ def health():
 
 @app.put("/profile")
 def save_profile(body: ProfileRequest):
-    """Create or fully replace a client's profile (semantic memory)."""
+    """Create or fully replace a client's profile."""
     fields = body.model_dump(exclude={"company_id", "client_id"})
-    memory.save_profile(body.company_id, body.client_id, **fields)
+    mm.remember_profile(body.company_id, body.client_id, **fields)
     return {"saved": True}
 
 
 @app.get("/profile")
 def get_profile(company_id: int, client_id: int):
-    return {"profile": memory.get_profile(company_id, client_id)}
+    return {"profile": mm.get_profile(company_id, client_id)}
 
 
 @app.post("/knowledge")
 def add_knowledge(body: KnowledgeRequest):
-    """Store a client document in the vector database (Qdrant)."""
-    doc_id, chunks = knowledge.add_document(
+    """Store a client document in the vector database."""
+    doc_id, chunks = mm.remember_document(
         body.company_id, body.client_id, body.title, body.text
     )
     if chunks == 0:
@@ -101,24 +93,26 @@ def add_knowledge(body: KnowledgeRequest):
 
 @app.post("/run")
 def run(body: RunRequest):
-    remembered = memory.get_recent_feedback(body.company_id, body.client_id)
-    combined = "\n".join(p for p in (remembered, body.past_feedback) if p)
-    profile = memory.get_profile(body.company_id, body.client_id)
-    docs = _knowledge_context(body.company_id, body.client_id, body.request)
-
+    ctx = mm.recall(
+        body.company_id,
+        body.client_id,
+        body.request,
+        extra_feedback=body.past_feedback,
+    )
     try:
-        result = run_with_retry(
+         result = run_with_retry(
             body.request,
-            combined,
+            ctx.feedback,
             body.language,
-            client_profile=profile,
-            knowledge=docs,
+            client_profile=ctx.profile,
+            knowledge=ctx.knowledge,
+            examples=ctx.examples,
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:300])
 
     output = str(result)
-    episode_id = memory.save_episode(
+    episode_id = mm.remember_exchange(
         body.company_id, body.client_id, body.request, output
     )
     return {"episode_id": episode_id, "result": output}
@@ -127,25 +121,29 @@ def run(body: RunRequest):
 @app.post("/chat")
 def chat(body: ChatRequest):
     conversation_id = body.conversation_id or uuid.uuid4().hex
-
-    history = memory.get_conversation(conversation_id, body.company_id)  # short-term
-    remembered = memory.get_recent_feedback(body.company_id, body.client_id)  # long-term
-    profile = memory.get_profile(body.company_id, body.client_id)  # semantic: profile
-    docs = _knowledge_context(body.company_id, body.client_id, body.message)  # semantic: docs
-
+    ctx = mm.recall(
+        body.company_id,
+        body.client_id,
+        body.message,
+        conversation_id=conversation_id,
+    )
     try:
-        result = run_with_retry(
-            body.message, remembered, body.language, history, profile, docs
+         result = run_with_retry(
+            body.message,
+            ctx.feedback,
+            body.language,
+            ctx.history,
+            ctx.profile,
+            ctx.knowledge,
+            ctx.examples,
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:300])
 
     output = str(result)
-    # Save only after success, so failed runs don't pollute the conversation
-    memory.add_message(conversation_id, body.company_id, body.client_id, "user", body.message)
-    memory.add_message(conversation_id, body.company_id, body.client_id, "assistant", output)
-    episode_id = memory.save_episode(
-        body.company_id, body.client_id, body.message, output
+    # Saved only after success, so failed runs don't pollute the conversation
+    episode_id = mm.remember_exchange(
+        body.company_id, body.client_id, body.message, output, conversation_id
     )
     return {
         "conversation_id": conversation_id,
@@ -155,10 +153,25 @@ def chat(body: ChatRequest):
 
 
 @app.post("/feedback")
-def feedback(body: FeedbackRequest):
-    saved = memory.add_feedback(
-        body.episode_id, body.company_id, body.status, body.feedback
+def feedback(body: FeedbackRequest, background: BackgroundTasks):
+    client_id = mm.remember_feedback(
+        body.company_id, body.episode_id, body.status, body.feedback
     )
-    if not saved:
+    if client_id is None:
         raise HTTPException(status_code=404, detail="Episode not found")
+    if body.status == "rejected":
+        # Runs after the response is sent, so the employee doesn't wait for the LLM
+        background.add_task(mm.maybe_consolidate, body.company_id, client_id)
     return {"saved": True}
+
+
+@app.post("/consolidate")
+def consolidate_now(body: ConsolidateRequest):
+    """Manual/debug: merge pending feedback into the client's rules right now."""
+    rules = mm.maybe_consolidate(body.company_id, body.client_id, min_items=1)
+    return {"rules": rules}
+
+@app.get("/recall")
+def recall(company_id: int, client_id: int, query: str, conversation_id: str | None = None):
+    """Debug: show exactly what the crew would receive. No LLM call."""
+    return asdict(mm.recall(company_id, client_id, query, conversation_id))

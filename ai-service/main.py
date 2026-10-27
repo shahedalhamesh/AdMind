@@ -22,6 +22,10 @@ def build_crew() -> Crew:
             "that are not written here or in the profile; if needed information is "
             "missing, say it is not available):\n"
             "{knowledge}\n\n"
+            "Approved examples of past work for this client (match their quality "
+            "and style; do NOT copy them word for word, and do not reuse their "
+            "facts unless the request asks for the same thing):\n"
+            "{examples}\n\n"
             "Conversation so far (use it to resolve references like 'the second one'):\n"
             "{conversation_history}\n\n"
             "Current request: {request}\n\n"
@@ -30,8 +34,11 @@ def build_crew() -> Crew:
             "{past_feedback}"
         ),
         expected_output=(
-            "Only the final deliverable for the agency employee, "
-            "with no introduction or closing remarks."
+            "Only the final deliverable for the agency employee, ready to copy and "
+            "publish, with no introduction, comments, or closing remarks. Natural, "
+            "correct language; no literal translation. ONLY if a fact the request "
+            "needs is truly missing from the provided material, output a single line "
+            "starting with 'Note to employee:' saying what is missing, and nothing else."
         ),
     )
 
@@ -51,6 +58,7 @@ def run_with_retry(
     conversation_history: str = "",
     client_profile: str = "",
     knowledge: str = "",
+    examples: str = "",
 ):
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
@@ -64,6 +72,7 @@ def run_with_retry(
                     "conversation_history": conversation_history or "No previous messages.",
                     "client_profile": client_profile or "No profile available.",
                     "knowledge": knowledge or "No documents found.",
+                    "examples": examples or "No approved examples yet.",
                 }
             )
         except Exception as e:
