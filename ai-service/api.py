@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import Literal
 
@@ -5,8 +6,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
+import knowledge
 import memory
 from main import run_with_retry
+
+log = logging.getLogger("admind")
 
 app = FastAPI(title="AdMind AI Service")
 
@@ -45,6 +49,22 @@ class ProfileRequest(BaseModel):
     avoid: str = ""
 
 
+class KnowledgeRequest(BaseModel):
+    company_id: int
+    client_id: int
+    title: str
+    text: str
+
+
+def _knowledge_context(company_id: int, client_id: int, query: str) -> str:
+    """Relevant document chunks for this client. Never breaks the request."""
+    try:
+        return knowledge.format_context(knowledge.search(company_id, client_id, query))
+    except Exception as e:
+        log.warning("knowledge search failed: %s", e)
+        return ""
+
+
 @app.get("/", include_in_schema=False)
 def root():
     return RedirectResponse(url="/docs")
@@ -68,15 +88,31 @@ def get_profile(company_id: int, client_id: int):
     return {"profile": memory.get_profile(company_id, client_id)}
 
 
+@app.post("/knowledge")
+def add_knowledge(body: KnowledgeRequest):
+    """Store a client document in the vector database (Qdrant)."""
+    doc_id, chunks = knowledge.add_document(
+        body.company_id, body.client_id, body.title, body.text
+    )
+    if chunks == 0:
+        raise HTTPException(status_code=422, detail="Document text is empty")
+    return {"doc_id": doc_id, "chunks": chunks}
+
+
 @app.post("/run")
 def run(body: RunRequest):
     remembered = memory.get_recent_feedback(body.company_id, body.client_id)
     combined = "\n".join(p for p in (remembered, body.past_feedback) if p)
     profile = memory.get_profile(body.company_id, body.client_id)
+    docs = _knowledge_context(body.company_id, body.client_id, body.request)
 
     try:
         result = run_with_retry(
-            body.request, combined, body.language, client_profile=profile
+            body.request,
+            combined,
+            body.language,
+            client_profile=profile,
+            knowledge=docs,
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:300])
@@ -94,11 +130,12 @@ def chat(body: ChatRequest):
 
     history = memory.get_conversation(conversation_id, body.company_id)  # short-term
     remembered = memory.get_recent_feedback(body.company_id, body.client_id)  # long-term
-    profile = memory.get_profile(body.company_id, body.client_id)  # semantic
+    profile = memory.get_profile(body.company_id, body.client_id)  # semantic: profile
+    docs = _knowledge_context(body.company_id, body.client_id, body.message)  # semantic: docs
 
     try:
         result = run_with_retry(
-            body.message, remembered, body.language, history, profile
+            body.message, remembered, body.language, history, profile, docs
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:300])
