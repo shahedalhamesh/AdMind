@@ -10,13 +10,16 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     FastAPI,
+    File,
+    Form,
     HTTPException,
     Security,
+    UploadFile,
 )
 from fastapi.responses import RedirectResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
-
+from extract import extract_text
 import memory_manager as mm
 from main import run_with_retry
 
@@ -123,6 +126,64 @@ def add_knowledge(body: KnowledgeRequest):
     if chunks == 0:
         raise HTTPException(status_code=422, detail="Document text is empty")
     return {"doc_id": doc_id, "chunks": chunks}
+
+
+@protected.get("/knowledge")
+def list_knowledge(company_id: int, client_id: int):
+    """List the documents stored for a client."""
+    return {"documents": mm.list_documents(company_id, client_id)}
+
+
+@protected.delete("/knowledge/{doc_id}")
+def delete_knowledge(doc_id: str, company_id: int):
+    """Delete a document (all its chunks)."""
+    deleted = mm.forget_document(company_id, doc_id)
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"deleted_chunks": deleted}
+
+
+MAX_UPLOAD = 10 * 1024 * 1024  # 10 MB
+
+
+@protected.post("/knowledge/upload")
+def upload_knowledge(
+    company_id: int = Form(...),
+    client_id: int = Form(...),
+    title: str = Form(""),
+    file: UploadFile = File(...),
+):
+    """Upload a PDF / TXT / MD file for a client."""
+    data = file.file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
+    try:
+        text = extract_text(file.filename or "", data)
+    except ValueError as e:
+        raise HTTPException(status_code=415, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=422, detail="Could not read this file")
+    if not text:
+        raise HTTPException(
+            status_code=422,
+            detail="No text found in the file (scanned PDFs need OCR)",
+        )
+    doc_id, chunks = mm.remember_document(
+        company_id, client_id, title or file.filename or "Untitled", text
+    )
+    warning = None
+    if (file.filename or "").lower().endswith(".pdf"):
+        warning = (
+            "PDF text order can be unreliable for Arabic, especially numbers "
+            "(prices, hours). Prefer DOCX or TXT."
+        )
+    return {
+        "doc_id": doc_id,
+        "chunks": chunks,
+        "characters": len(text),
+        "warning": warning,
+        "preview": text[:300],
+    }
 
 
 @protected.post("/run")

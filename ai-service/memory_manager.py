@@ -144,3 +144,10 @@ def remember_document(company_id: int, client_id: int, title: str, text: str) ->
 
 def get_profile(company_id: int, client_id: int) -> str:
     return memory.get_profile(company_id, client_id)
+
+def list_documents(company_id: int, client_id: int) -> list[dict]:
+    return knowledge.list_documents(company_id, client_id)
+
+
+def forget_document(company_id: int, doc_id: str) -> int:
+    return knowledge.delete_document(company_id, doc_id)

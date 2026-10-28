@@ -79,16 +79,51 @@ def _tenant_filter(company_id: int, client_id: int) -> Filter:
 # ---------------------------------------------------------------- documents
 
 
-def chunk_text(text: str, max_words: int = 200, overlap: int = 30) -> list[str]:
-    """Split text into overlapping chunks of ~max_words words."""
+def _split_words(text: str, max_words: int, overlap: int) -> list[str]:
+    """Fallback for one very long paragraph: overlapping windows of words."""
     words = text.split()
-    chunks: list[str] = []
+    out: list[str] = []
     i = 0
     while i < len(words):
-        chunks.append(" ".join(words[i : i + max_words]))
+        out.append(" ".join(words[i : i + max_words]))
         if i + max_words >= len(words):
             break
         i += max_words - overlap
+    return out
+
+
+def chunk_text(text: str, max_words: int = 120, overlap: int = 20) -> list[str]:
+    """Structure-aware chunking.
+
+    Lines are grouped into chunks of up to ~max_words words, and a short line
+    (a heading) starts a new chunk, so each chunk covers one topic.
+    """
+    heading_words = 8  # a line this short, not a bullet, is treated as a heading
+    min_words = 25  # don't cut a chunk that is still tiny
+    chunks: list[str] = []
+    current: list[str] = []
+    size = 0
+
+    def flush() -> None:
+        nonlocal current, size
+        if current:
+            chunks.append("\n".join(current))
+        current, size = [], 0
+
+    for line in (ln.strip() for ln in text.splitlines()):
+        if not line:
+            continue
+        n = len(line.split())
+        if n > max_words:  # one huge paragraph
+            flush()
+            chunks.extend(_split_words(line, max_words, overlap))
+            continue
+        is_heading = n <= heading_words and not line.startswith(("-", "•", "*"))
+        if current and (size + n > max_words or (is_heading and size >= min_words)):
+            flush()
+        current.append(line)
+        size += n
+    flush()
     return chunks
 
 
@@ -203,3 +238,40 @@ def format_examples(results: list[dict]) -> str:
     return "\n\n".join(
         f"Request: {r['request']}\nApproved answer: {r['output'][:600]}" for r in results
     )
+
+def list_documents(company_id: int, client_id: int) -> list[dict]:
+    """Documents stored for one client: id, title and number of chunks."""
+    docs: dict[str, dict] = {}
+    offset = None
+    while True:
+        points, offset = _client().scroll(
+            collection_name=COLLECTION,
+            scroll_filter=_tenant_filter(company_id, client_id),
+            limit=256,
+            offset=offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+        for p in points:
+            d = docs.setdefault(
+                p.payload["doc_id"],
+                {"doc_id": p.payload["doc_id"], "title": p.payload["title"], "chunks": 0},
+            )
+            d["chunks"] += 1
+        if offset is None:
+            break
+    return list(docs.values())
+
+
+def delete_document(company_id: int, doc_id: str) -> int:
+    """Delete every chunk of one document. Returns how many chunks were removed."""
+    flt = Filter(
+        must=[
+            FieldCondition(key="company_id", match=MatchValue(value=company_id)),
+            FieldCondition(key="doc_id", match=MatchValue(value=doc_id)),
+        ]
+    )
+    count = _client().count(COLLECTION, count_filter=flt, exact=True).count
+    if count:
+        _client().delete(COLLECTION, points_selector=flt)
+    return count
