@@ -1,15 +1,42 @@
-from dataclasses import asdict
+import os
+import secrets
 import uuid
+from dataclasses import asdict
 from typing import Literal
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from dotenv import load_dotenv
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Security,
+)
 from fastapi.responses import RedirectResponse
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
 import memory_manager as mm
 from main import run_with_retry
 
+load_dotenv()
+API_KEY = os.getenv("AI_SERVICE_KEY", "")
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def require_key(key: str | None = Security(api_key_header)) -> None:
+    """Reject any request without the right key. Fails closed if none is configured."""
+    if not API_KEY:
+        raise HTTPException(
+            status_code=503, detail="AI_SERVICE_KEY is not configured on the server"
+        )
+    if not key or not secrets.compare_digest(key.encode(), API_KEY.encode()):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
 app = FastAPI(title="AdMind AI Service")
+protected = APIRouter(dependencies=[Depends(require_key)])
 
 
 class RunRequest(BaseModel):
@@ -52,9 +79,13 @@ class KnowledgeRequest(BaseModel):
     title: str
     text: str
 
+
 class ConsolidateRequest(BaseModel):
     company_id: int
     client_id: int
+
+
+# ---------------------------------------------------------------- open routes
 
 
 @app.get("/", include_in_schema=False)
@@ -67,7 +98,10 @@ def health():
     return {"status": "ok"}
 
 
-@app.put("/profile")
+# ------------------------------------------------------------ protected routes
+
+
+@protected.put("/profile")
 def save_profile(body: ProfileRequest):
     """Create or fully replace a client's profile."""
     fields = body.model_dump(exclude={"company_id", "client_id"})
@@ -75,12 +109,12 @@ def save_profile(body: ProfileRequest):
     return {"saved": True}
 
 
-@app.get("/profile")
+@protected.get("/profile")
 def get_profile(company_id: int, client_id: int):
     return {"profile": mm.get_profile(company_id, client_id)}
 
 
-@app.post("/knowledge")
+@protected.post("/knowledge")
 def add_knowledge(body: KnowledgeRequest):
     """Store a client document in the vector database."""
     doc_id, chunks = mm.remember_document(
@@ -91,7 +125,7 @@ def add_knowledge(body: KnowledgeRequest):
     return {"doc_id": doc_id, "chunks": chunks}
 
 
-@app.post("/run")
+@protected.post("/run")
 def run(body: RunRequest):
     ctx = mm.recall(
         body.company_id,
@@ -100,7 +134,7 @@ def run(body: RunRequest):
         extra_feedback=body.past_feedback,
     )
     try:
-         result = run_with_retry(
+        result = run_with_retry(
             body.request,
             ctx.feedback,
             body.language,
@@ -118,7 +152,7 @@ def run(body: RunRequest):
     return {"episode_id": episode_id, "result": output}
 
 
-@app.post("/chat")
+@protected.post("/chat")
 def chat(body: ChatRequest):
     conversation_id = body.conversation_id or uuid.uuid4().hex
     ctx = mm.recall(
@@ -128,7 +162,7 @@ def chat(body: ChatRequest):
         conversation_id=conversation_id,
     )
     try:
-         result = run_with_retry(
+        result = run_with_retry(
             body.message,
             ctx.feedback,
             body.language,
@@ -152,7 +186,7 @@ def chat(body: ChatRequest):
     }
 
 
-@app.post("/feedback")
+@protected.post("/feedback")
 def feedback(body: FeedbackRequest, background: BackgroundTasks):
     client_id = mm.remember_feedback(
         body.company_id, body.episode_id, body.status, body.feedback
@@ -165,13 +199,17 @@ def feedback(body: FeedbackRequest, background: BackgroundTasks):
     return {"saved": True}
 
 
-@app.post("/consolidate")
+@protected.post("/consolidate")
 def consolidate_now(body: ConsolidateRequest):
     """Manual/debug: merge pending feedback into the client's rules right now."""
     rules = mm.maybe_consolidate(body.company_id, body.client_id, min_items=1)
     return {"rules": rules}
 
-@app.get("/recall")
+
+@protected.get("/recall")
 def recall(company_id: int, client_id: int, query: str, conversation_id: str | None = None):
     """Debug: show exactly what the crew would receive. No LLM call."""
     return asdict(mm.recall(company_id, client_id, query, conversation_id))
+
+
+app.include_router(protected)
