@@ -21,6 +21,7 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from extract import extract_text
 import memory_manager as mm
+import verify
 from main import run_with_retry
 
 load_dotenv()
@@ -208,11 +209,13 @@ def run(body: RunRequest):
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:300])
 
-    output = str(result)
+    output, verification = verify.check(
+        str(result), body.request, ctx.profile, ctx.knowledge
+    )
     episode_id = mm.remember_exchange(
         body.company_id, body.client_id, body.request, output
     )
-    return {"episode_id": episode_id, "result": output}
+    return {"episode_id": episode_id, "result": output, "verification": verification}
 
 
 @protected.post("/chat")
@@ -237,7 +240,9 @@ def chat(body: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:300])
 
-    output = str(result)
+    output, verification = verify.check(
+        str(result), body.message, ctx.profile, ctx.knowledge, ctx.history
+    )
     # Saved only after success, so failed runs don't pollute the conversation
     episode_id = mm.remember_exchange(
         body.company_id, body.client_id, body.message, output, conversation_id
@@ -246,6 +251,7 @@ def chat(body: ChatRequest):
         "conversation_id": conversation_id,
         "episode_id": episode_id,
         "result": output,
+        "verification": verification,
     }
 
 
