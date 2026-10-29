@@ -174,6 +174,44 @@ def format_context(results: list[dict]) -> str:
     return "\n\n".join(f"[{r['title']}]\n{r['text']}" for r in results)
 
 
+def list_documents(company_id: int, client_id: int) -> list[dict]:
+    """Documents stored for one client: id, title and number of chunks."""
+    docs: dict[str, dict] = {}
+    offset = None
+    while True:
+        points, offset = _client().scroll(
+            collection_name=COLLECTION,
+            scroll_filter=_tenant_filter(company_id, client_id),
+            limit=256,
+            offset=offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+        for p in points:
+            d = docs.setdefault(
+                p.payload["doc_id"],
+                {"doc_id": p.payload["doc_id"], "title": p.payload["title"], "chunks": 0},
+            )
+            d["chunks"] += 1
+        if offset is None:
+            break
+    return list(docs.values())
+
+
+def delete_document(company_id: int, doc_id: str) -> int:
+    """Delete every chunk of one document. Returns how many chunks were removed."""
+    flt = Filter(
+        must=[
+            FieldCondition(key="company_id", match=MatchValue(value=company_id)),
+            FieldCondition(key="doc_id", match=MatchValue(value=doc_id)),
+        ]
+    )
+    count = _client().count(COLLECTION, count_filter=flt, exact=True).count
+    if count:
+        _client().delete(COLLECTION, points_selector=flt)
+    return count
+
+
 # ----------------------------------------------------------------- examples
 
 
@@ -239,39 +277,45 @@ def format_examples(results: list[dict]) -> str:
         f"Request: {r['request']}\nApproved answer: {r['output'][:600]}" for r in results
     )
 
-def list_documents(company_id: int, client_id: int) -> list[dict]:
-    """Documents stored for one client: id, title and number of chunks."""
-    docs: dict[str, dict] = {}
+
+# ------------------------------------------------------------------ cleanup
+
+
+def prune_examples(company_id: int, client_id: int, keep: int) -> int:
+    """Keep only the newest `keep` approved examples of one client.
+
+    Newest = highest episode_id. Returns how many were deleted.
+    """
+    items: list[tuple[int, str]] = []
     offset = None
     while True:
         points, offset = _client().scroll(
-            collection_name=COLLECTION,
+            collection_name=EXAMPLES,
             scroll_filter=_tenant_filter(company_id, client_id),
             limit=256,
             offset=offset,
-            with_payload=True,
+            with_payload=["episode_id"],
             with_vectors=False,
         )
-        for p in points:
-            d = docs.setdefault(
-                p.payload["doc_id"],
-                {"doc_id": p.payload["doc_id"], "title": p.payload["title"], "chunks": 0},
-            )
-            d["chunks"] += 1
+        items.extend((p.payload["episode_id"], p.id) for p in points)
         if offset is None:
             break
-    return list(docs.values())
+    items.sort()
+    old = items[: max(len(items) - keep, 0)]
+    if old:
+        _client().delete(
+            EXAMPLES, points_selector=PointIdsList(points=[pid for _, pid in old])
+        )
+    return len(old)
 
 
-def delete_document(company_id: int, doc_id: str) -> int:
-    """Delete every chunk of one document. Returns how many chunks were removed."""
-    flt = Filter(
-        must=[
-            FieldCondition(key="company_id", match=MatchValue(value=company_id)),
-            FieldCondition(key="doc_id", match=MatchValue(value=doc_id)),
-        ]
-    )
-    count = _client().count(COLLECTION, count_filter=flt, exact=True).count
-    if count:
-        _client().delete(COLLECTION, points_selector=flt)
-    return count
+def delete_client_data(company_id: int, client_id: int) -> dict:
+    """Delete every document chunk and example of one client."""
+    flt = _tenant_filter(company_id, client_id)
+    out = {}
+    for key, name in (("document_chunks", COLLECTION), ("examples", EXAMPLES)):
+        n = _client().count(name, count_filter=flt, exact=True).count
+        if n:
+            _client().delete(name, points_selector=flt)
+        out[key] = n
+    return out

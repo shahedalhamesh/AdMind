@@ -4,6 +4,7 @@ api.py talks only to this module. To swap a store later (SQLite -> MySQL) or
 add a new memory, change it here and nothing else.
 """
 import logging
+import os
 from dataclasses import dataclass
 
 import consolidate
@@ -14,6 +15,13 @@ log = logging.getLogger("admind")
 
 # Merge feedback into the client's rules once this many new rejected comments exist.
 CONSOLIDATE_AFTER = 3
+
+# Cleanup limits per client (override in .env). Read at call time on purpose.
+def _limit(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, default))
+    except ValueError:
+        return default
 
 
 @dataclass
@@ -88,7 +96,17 @@ def remember_exchange(
     if conversation_id:
         memory.add_message(conversation_id, company_id, client_id, "user", request)
         memory.add_message(conversation_id, company_id, client_id, "assistant", output)
-    return memory.save_episode(company_id, client_id, request, output)
+    episode_id = memory.save_episode(company_id, client_id, request, output)
+    try:
+        memory.prune(
+            company_id,
+            client_id,
+            _limit("MAX_EPISODES", 500),
+            _limit("MESSAGE_DAYS", 30),
+        )
+    except Exception as e:  # cleanup must never break saving
+        log.warning("cleanup failed: %s", e)
+    return episode_id
 
 
 def remember_feedback(
@@ -107,6 +125,9 @@ def remember_feedback(
         if status == "approved":
             knowledge.add_example(
                 company_id, ep["client_id"], episode_id, ep["request"], ep["output"]
+            )
+            knowledge.prune_examples(
+                company_id, ep["client_id"], _limit("MAX_EXAMPLES", 30)
             )
         else:
             knowledge.remove_example(company_id, episode_id)
@@ -137,6 +158,17 @@ def maybe_consolidate(
     return current
 
 
+def forget_client(company_id: int, client_id: int) -> dict:
+    """Delete everything stored about one client, in every memory.
+
+    Vector store first: if it fails, the SQL data is still there and the call
+    can simply be repeated.
+    """
+    result = knowledge.delete_client_data(company_id, client_id)
+    result.update(memory.delete_client(company_id, client_id))
+    return result
+
+
 def remember_profile(company_id: int, client_id: int, **fields: str) -> None:
     memory.save_profile(company_id, client_id, **fields)
 
@@ -153,5 +185,5 @@ def list_documents(company_id: int, client_id: int) -> list[dict]:
     return knowledge.list_documents(company_id, client_id)
 
 
-def forget_document(company_id: str, doc_id: str) -> int:
+def forget_document(company_id: int, doc_id: str) -> int:
     return knowledge.delete_document(company_id, doc_id)

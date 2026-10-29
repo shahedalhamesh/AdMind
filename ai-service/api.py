@@ -262,6 +262,16 @@ def feedback(body: FeedbackRequest, background: BackgroundTasks):
     return {"saved": True}
 
 
+@protected.delete("/client")
+def delete_client(company_id: int, client_id: int, confirm: bool = False):
+    """Permanently delete everything stored about one client (all memories)."""
+    if not confirm:
+        raise HTTPException(
+            status_code=400, detail="Pass confirm=true to delete this client's data"
+        )
+    return {"deleted": mm.forget_client(company_id, client_id)}
+
+
 # ------------------------------------------------------- debug routes (opt-in)
 
 if DEBUG_ENDPOINTS:
