@@ -35,7 +35,11 @@ def recall(
     extra_feedback: str = "",
 ) -> Context:
     """Collect what every memory knows that is relevant to this request."""
-    feedback = memory.get_recent_feedback(company_id, client_id)
+    rules, _ = memory.get_rules(company_id, client_id)
+
+    # Once feedback has been merged into rules, the raw comments are redundant,
+    # so they are only used while the client has no learned rules yet.
+    feedback = "" if rules else memory.get_recent_feedback(company_id, client_id)
     feedback = "\n".join(p for p in (feedback, extra_feedback) if p)
 
     history = ""
@@ -57,7 +61,6 @@ def recall(
         log.warning("examples search failed: %s", e)
 
     profile = memory.get_profile(company_id, client_id)
-    rules, _ = memory.get_rules(company_id, client_id)
     if rules:
         profile = (
             (profile + "\n" if profile else "")
@@ -145,9 +148,10 @@ def remember_document(company_id: int, client_id: int, title: str, text: str) ->
 def get_profile(company_id: int, client_id: int) -> str:
     return memory.get_profile(company_id, client_id)
 
+
 def list_documents(company_id: int, client_id: int) -> list[dict]:
     return knowledge.list_documents(company_id, client_id)
 
 
-def forget_document(company_id: int, doc_id: str) -> int:
+def forget_document(company_id: str, doc_id: str) -> int:
     return knowledge.delete_document(company_id, doc_id)

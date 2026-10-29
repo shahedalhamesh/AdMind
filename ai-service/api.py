@@ -25,6 +25,8 @@ from main import run_with_retry
 
 load_dotenv()
 API_KEY = os.getenv("AI_SERVICE_KEY", "")
+# Debug endpoints (/recall, /consolidate) exist only when this is set to "1"
+DEBUG_ENDPOINTS = os.getenv("DEBUG_ENDPOINTS", "0") == "1"
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
@@ -153,7 +155,7 @@ def upload_knowledge(
     title: str = Form(""),
     file: UploadFile = File(...),
 ):
-    """Upload a PDF / TXT / MD file for a client."""
+    """Upload a PDF / DOCX / TXT / MD file for a client."""
     data = file.file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
@@ -260,17 +262,25 @@ def feedback(body: FeedbackRequest, background: BackgroundTasks):
     return {"saved": True}
 
 
-@protected.post("/consolidate")
-def consolidate_now(body: ConsolidateRequest):
-    """Manual/debug: merge pending feedback into the client's rules right now."""
-    rules = mm.maybe_consolidate(body.company_id, body.client_id, min_items=1)
-    return {"rules": rules}
+# ------------------------------------------------------- debug routes (opt-in)
 
+if DEBUG_ENDPOINTS:
 
-@protected.get("/recall")
-def recall(company_id: int, client_id: int, query: str, conversation_id: str | None = None):
-    """Debug: show exactly what the crew would receive. No LLM call."""
-    return asdict(mm.recall(company_id, client_id, query, conversation_id))
+    @protected.post("/consolidate")
+    def consolidate_now(body: ConsolidateRequest):
+        """Debug: merge pending feedback into the client's rules right now."""
+        rules = mm.maybe_consolidate(body.company_id, body.client_id, min_items=1)
+        return {"rules": rules}
+
+    @protected.get("/recall")
+    def recall(
+        company_id: int,
+        client_id: int,
+        query: str,
+        conversation_id: str | None = None,
+    ):
+        """Debug: show exactly what the crew would receive. No LLM call."""
+        return asdict(mm.recall(company_id, client_id, query, conversation_id))
 
 
 app.include_router(protected)
