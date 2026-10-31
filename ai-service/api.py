@@ -209,13 +209,17 @@ def run(body: RunRequest):
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:300])
 
+    draft = str(result)
     output, verification = verify.check(
-        str(result), body.request, ctx.profile, ctx.knowledge
+        draft, body.request, ctx.profile, ctx.knowledge
     )
     episode_id = mm.remember_exchange(
         body.company_id, body.client_id, body.request, output
     )
-    return {"episode_id": episode_id, "result": output, "verification": verification}
+    response = {"episode_id": episode_id, "result": output, "verification": verification}
+    if verification == "corrected":
+        response["original"] = draft  # what the crew wrote before the fact-check
+    return response
 
 
 @protected.post("/chat")
@@ -240,19 +244,23 @@ def chat(body: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:300])
 
+    draft = str(result)
     output, verification = verify.check(
-        str(result), body.message, ctx.profile, ctx.knowledge, ctx.history
+        draft, body.message, ctx.profile, ctx.knowledge, ctx.history
     )
     # Saved only after success, so failed runs don't pollute the conversation
     episode_id = mm.remember_exchange(
         body.company_id, body.client_id, body.message, output, conversation_id
     )
-    return {
+    response = {
         "conversation_id": conversation_id,
         "episode_id": episode_id,
         "result": output,
         "verification": verification,
     }
+    if verification == "corrected":
+        response["original"] = draft
+    return response
 
 
 @protected.post("/feedback")

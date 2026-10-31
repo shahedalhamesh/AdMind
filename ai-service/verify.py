@@ -30,7 +30,9 @@ DRAFT to check:
 Task:
 1. Look ONLY at factual claims in the draft: prices, numbers, discounts, offers, \
 dates, opening hours, locations, product names or ingredients, guarantees, \
-contact details.
+contact details. Also treat as factual claims: how long an offer lasts or that \
+it is limited-time, urgency ("last chance", "don't miss"), and savings \
+("save money", "cheaper").
 2. A claim is supported only if the SOURCES above state it (or the employee \
 gave it in the request).
 3. If every factual claim is supported, or the draft has no factual claims, \
