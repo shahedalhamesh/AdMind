@@ -18,11 +18,12 @@ from fastapi import (
 )
 from fastapi.responses import RedirectResponse
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from extract import extract_text
 import memory_manager as mm
 import verify
 from main import run_with_retry
+from profile_extract import extract_profile
 
 load_dotenv()
 API_KEY = os.getenv("AI_SERVICE_KEY", "")
@@ -79,6 +80,10 @@ class ProfileRequest(BaseModel):
     avoid: str = ""
 
 
+class ExtractProfileRequest(BaseModel):
+    text: str = Field(min_length=10, max_length=20000)  # raw brief, email, notes
+
+
 class KnowledgeRequest(BaseModel):
     company_id: int
     client_id: int
@@ -118,6 +123,21 @@ def save_profile(body: ProfileRequest):
 @protected.get("/profile")
 def get_profile(company_id: int, client_id: int):
     return {"profile": mm.get_profile(company_id, client_id)}
+
+
+@protected.post("/profile/extract")
+def extract_profile_fields(body: ExtractProfileRequest):
+    """Read a raw client brief and PROPOSE profile fields. Nothing is saved:
+    the employee reviews the fields, then saves them with PUT /profile."""
+    try:
+        fields = extract_profile(body.text)
+    except ValueError:
+        raise HTTPException(
+            status_code=502, detail="Could not read the model's answer, try again"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:300])
+    return {"profile": fields, "saved": False}
 
 
 @protected.post("/knowledge")
