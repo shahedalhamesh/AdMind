@@ -18,3 +18,4 @@ venv/
 memory.db 
 
 qdrant_data/
+media_out/
