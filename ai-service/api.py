@@ -1,7 +1,9 @@
 import os
 import secrets
+import threading
 import uuid
 from dataclasses import asdict
+from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
@@ -16,13 +18,15 @@ from fastapi import (
     Security,
     UploadFile,
 )
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 from extract import extract_text
+import media
 import memory_manager as mm
 import verify
 from main import run_with_retry
+from media_prompt import to_image_prompt
 from profile_extract import extract_profile
 
 load_dotenv()
@@ -94,6 +98,22 @@ class KnowledgeRequest(BaseModel):
 class ConsolidateRequest(BaseModel):
     company_id: int
     client_id: int
+
+
+class ImageRequest(BaseModel):
+    company_id: int
+    client_id: int
+    request: str = Field(min_length=3, max_length=2000)  # any language
+    aspect_ratio: Literal["1:1", "16:9", "9:16", "4:3", "3:4"] = "1:1"
+    raw_prompt: bool = False  # True = send `request` as is (must be English)
+
+
+class VideoRequest(BaseModel):
+    company_id: int
+    client_id: int
+    image_file: str  # a file name returned by POST /media/image
+    motion_prompt: str = Field(default="", max_length=500)
+    total_seconds: float = Field(default=3.5, gt=0, le=21)
 
 
 # ---------------------------------------------------------------- open routes
@@ -304,6 +324,83 @@ def delete_client(company_id: int, client_id: int, confirm: bool = False):
             status_code=400, detail="Pass confirm=true to delete this client's data"
         )
     return {"deleted": mm.forget_client(company_id, client_id)}
+
+
+# ---------------------------------------------------------------- media
+
+_jobs: dict[str, dict] = {}  # video jobs; in memory, lost on restart
+_jobs_lock = threading.Lock()
+
+
+def _media_file(name: str) -> Path:
+    """Resolve a file name inside media_out/, rejecting anything else."""
+    if not name or Path(name).name != name:
+        raise HTTPException(status_code=400, detail="Invalid file name")
+    path = (media.OUT_DIR / name).resolve()
+    if path.parent != media.OUT_DIR.resolve() or not path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return path
+
+
+@protected.post("/media/image")
+def media_image(body: ImageRequest):
+    """Generate one image. Takes a few seconds to about a minute."""
+    if body.raw_prompt:
+        image_prompt = body.request
+    else:
+        profile = mm.get_profile(body.company_id, body.client_id)
+        image_prompt = to_image_prompt(body.request, profile)
+    try:
+        path = media.generate_image(image_prompt, aspect_ratio=body.aspect_ratio)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:300])
+    return {
+        "file": path.name,
+        "url": f"/media/file/{path.name}",
+        "image_prompt": image_prompt,
+    }
+
+
+def _run_video_job(job_id: str, image_path: str, motion: str, seconds: float):
+    try:
+        out = media.generate_long_video(image_path, motion, seconds)
+        update = {"status": "done", "file": out.name, "url": f"/media/file/{out.name}"}
+    except Exception as e:
+        update = {"status": "failed", "error": str(e)[:300]}
+    with _jobs_lock:
+        _jobs[job_id].update(update)
+
+
+@protected.post("/media/video")
+def media_video(body: VideoRequest, background: BackgroundTasks):
+    """Start a video job from an existing image. Poll GET /media/jobs/{job_id}."""
+    image = _media_file(body.image_file)
+    with _jobs_lock:
+        if any(j["status"] == "running" for j in _jobs.values()):
+            # One at a time: the free GPU quota is shared and small
+            raise HTTPException(
+                status_code=429, detail="A video is already being generated, try later"
+            )
+        job_id = uuid.uuid4().hex
+        _jobs[job_id] = {"status": "running", "company_id": body.company_id}
+    background.add_task(
+        _run_video_job, job_id, str(image), body.motion_prompt, body.total_seconds
+    )
+    return {"job_id": job_id, "status": "running"}
+
+
+@protected.get("/media/jobs/{job_id}")
+def media_job(job_id: str, company_id: int):
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is None or job["company_id"] != company_id:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return {"job_id": job_id, **{k: v for k, v in job.items() if k != "company_id"}}
+
+
+@protected.get("/media/file/{name}")
+def media_download(name: str):
+    return FileResponse(_media_file(name))
 
 
 # ------------------------------------------------------- debug routes (opt-in)
