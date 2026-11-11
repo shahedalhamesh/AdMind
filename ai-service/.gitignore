@@ -15,4 +15,7 @@ venv/
 .coverage
 
 # Temporary local memory (testing only)
-memory.db
+memory.db 
+
+qdrant_data/
+media_out/

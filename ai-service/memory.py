@@ -39,9 +39,7 @@ def _connect() -> sqlite3.Connection:
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
-
     )
-
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS client_profiles (
@@ -57,7 +55,21 @@ def _connect() -> sqlite3.Connection:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS client_rules (
+            company_id INTEGER NOT NULL,
+            client_id INTEGER NOT NULL,
+            rules TEXT NOT NULL DEFAULT '',
+            last_episode_id INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (company_id, client_id)
+        )
+        """
+    )
     return conn
+
+
+# ----------------------------------------------------------------- episodes
 
 
 def save_episode(company_id: int, client_id: int, request: str, output: str) -> int:
@@ -97,6 +109,21 @@ def get_recent_feedback(company_id: int, client_id: int, limit: int = 5) -> str:
         for r in rows
     )
 
+
+def get_episode(episode_id: int, company_id: int) -> dict | None:
+    """One episode (request + output), only if it belongs to this company."""
+    with closing(_connect()) as conn:
+        row = conn.execute(
+            "SELECT client_id, request, output FROM episodes "
+            "WHERE id = ? AND company_id = ?",
+            (episode_id, company_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+# ----------------------------------------------------------------- messages
+
+
 def add_message(
     conversation_id: str, company_id: int, client_id: int, role: str, content: str
 ) -> None:
@@ -120,6 +147,9 @@ def get_conversation(conversation_id: str, company_id: int, limit: int = 10) -> 
         ).fetchall()
     rows.reverse()
     return "\n".join(f"{r['role']}: {r['content'][:800]}" for r in rows)
+
+
+# ----------------------------------------------------------------- profiles
 
 PROFILE_LABELS = {
     "client_name": "Client name",
@@ -158,3 +188,88 @@ def get_profile(company_id: int, client_id: int) -> str:
     return "\n".join(
         f"- {label}: {row[col]}" for col, label in PROFILE_LABELS.items() if row[col]
     )
+
+
+# -------------------------------------------------------------------- rules
+
+
+def get_rules(company_id: int, client_id: int) -> tuple[str, int]:
+    """Learned style rules for a client, and the last episode they were built from."""
+    with closing(_connect()) as conn:
+        row = conn.execute(
+            "SELECT rules, last_episode_id FROM client_rules "
+            "WHERE company_id = ? AND client_id = ?",
+            (company_id, client_id),
+        ).fetchone()
+    return (row["rules"], row["last_episode_id"]) if row else ("", 0)
+
+
+def save_rules(company_id: int, client_id: int, rules: str, last_episode_id: int) -> None:
+    with closing(_connect()) as conn:
+        conn.execute(
+            "INSERT INTO client_rules (company_id, client_id, rules, last_episode_id) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(company_id, client_id) DO UPDATE SET "
+            "rules = excluded.rules, last_episode_id = excluded.last_episode_id",
+            (company_id, client_id, rules, last_episode_id),
+        )
+        conn.commit()
+
+
+def get_unconsolidated_feedback(company_id: int, client_id: int) -> list[dict]:
+    """Rejected episodes with a written comment, not yet merged into the rules."""
+    _, last_id = get_rules(company_id, client_id)
+    with closing(_connect()) as conn:
+        rows = conn.execute(
+            "SELECT id, feedback FROM episodes "
+            "WHERE company_id = ? AND client_id = ? AND status = 'rejected' "
+            "AND feedback IS NOT NULL AND feedback != '' AND id > ? ORDER BY id",
+            (company_id, client_id, last_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ------------------------------------------------------------------ cleanup
+
+
+def prune(
+    company_id: int, client_id: int, max_episodes: int, message_days: int
+) -> dict:
+    """Delete old episodes and old chat messages for one client.
+
+    Keeps the newest `max_episodes` episodes. Rejected episodes whose comment has
+    not yet been merged into the learned rules are never deleted, so nothing is
+    lost before it was learned.
+    """
+    _, last_id = get_rules(company_id, client_id)
+    with closing(_connect()) as conn:
+        eps = conn.execute(
+            "DELETE FROM episodes WHERE company_id = ? AND client_id = ? "
+            "AND id NOT IN ("
+            "  SELECT id FROM episodes WHERE company_id = ? AND client_id = ? "
+            "  ORDER BY id DESC LIMIT ?"
+            ") "
+            "AND NOT (status = 'rejected' AND feedback IS NOT NULL "
+            "AND feedback != '' AND id > ?)",
+            (company_id, client_id, company_id, client_id, max_episodes, last_id),
+        ).rowcount
+        msgs = conn.execute(
+            "DELETE FROM messages WHERE company_id = ? AND client_id = ? "
+            "AND created_at < datetime('now', ?)",
+            (company_id, client_id, f"-{int(message_days)} days"),
+        ).rowcount
+        conn.commit()
+    return {"episodes": eps, "messages": msgs}
+
+
+def delete_client(company_id: int, client_id: int) -> dict:
+    """Delete everything this store knows about one client."""
+    counts = {}
+    with closing(_connect()) as conn:
+        for table in ("episodes", "messages", "client_profiles", "client_rules"):
+            counts[table] = conn.execute(
+                f"DELETE FROM {table} WHERE company_id = ? AND client_id = ?",
+                (company_id, client_id),
+            ).rowcount
+        conn.commit()
+    return counts
