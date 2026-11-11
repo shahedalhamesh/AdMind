@@ -1,6 +1,9 @@
+import os
+import re
 import time
 from crewai import Crew, Task, Process
 
+import llm as llm_module
 from agents import (
     main_agent,
     client_agent,
@@ -9,7 +12,36 @@ from agents import (
     analytics_agent,
 )
 
-MAX_ATTEMPTS = 5
+MAX_ATTEMPTS = 8  # a model switch uses one attempt
+# Requests per minute the crew may send to the model. The free Gemini tier
+# allowed 5/min on gemini-2.5-flash; raise MAX_RPM in .env if your model allows
+# more. 0 = no limit.
+MAX_RPM = int(os.getenv("MAX_RPM", "4")) or None
+
+_LIMIT_MARKERS = (
+    "429", "503", "unavailable", "quota", "rate limit", "high demand",
+    "overloaded", "resource_exhausted",
+    "404", "not found", "no longer available",
+)
+_TRANSIENT_MARKERS = _LIMIT_MARKERS + ("timed out", "timeout")
+
+
+def _is_limit_error(error: Exception) -> bool:
+    """Quota / overload errors: switching to another model can fix them."""
+    message = str(error).lower()
+    return any(marker in message for marker in _LIMIT_MARKERS)
+
+
+def _is_transient(error: Exception) -> bool:
+    """True for errors that usually go away by themselves (limits, overload)."""
+    message = str(error).lower()
+    return any(marker in message for marker in _TRANSIENT_MARKERS)
+
+
+def _wait_seconds(error: Exception, default: float) -> float:
+    """Use the wait time Google asks for ('Please retry in 23.2s') if present."""
+    match = re.search(r"retry in ([\d.]+)s", str(error), re.IGNORECASE)
+    return float(match.group(1)) + 2 if match else default
 
 
 def build_crew() -> Crew:
@@ -54,6 +86,7 @@ def build_crew() -> Crew:
         tasks=[task],
         process=Process.hierarchical,
         manager_agent=main_agent,
+        max_rpm=MAX_RPM,
         verbose=True,
     )
 
@@ -67,6 +100,7 @@ def run_with_retry(
     knowledge: str = "",
     examples: str = "",
 ):
+    switches_in_row = 0  # models tried since the last real wait
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             # Build a fresh crew on each attempt to avoid stale state
@@ -84,10 +118,28 @@ def run_with_retry(
             )
         except Exception as e:
             print(f"\n[retry] Attempt {attempt}/{MAX_ATTEMPTS} failed: {str(e)[:120]}")
-            if attempt == MAX_ATTEMPTS:
+            # A bug in our code won't fix itself: only retry limit/overload errors
+            if attempt == MAX_ATTEMPTS or not _is_transient(e):
                 raise
-            wait = 20 * attempt  # 20s, 40s, 60s, 80s
-            print(f"[retry] Waiting {wait}s before trying again...\n")
+
+            # Quota / overload on this model: try the next one right away
+            if (
+                _is_limit_error(e)
+                and len(llm_module.NAMES) > 1
+                and switches_in_row < len(llm_module.NAMES) - 1
+            ):
+                try:
+                    llm_module.switch_to_next_model()
+                    switches_in_row += 1
+                    time.sleep(2)
+                    continue
+                except Exception as switch_error:
+                    print(f"[retry] Could not switch model: {switch_error}")
+
+            # Every model failed (or switching isn't possible): wait, then go again
+            switches_in_row = 0
+            wait = _wait_seconds(e, 20 * attempt)
+            print(f"[retry] Waiting {wait:.0f}s before trying again...\n")
             time.sleep(wait)
 
 

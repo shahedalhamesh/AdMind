@@ -24,10 +24,12 @@ from pydantic import BaseModel, Field
 from extract import extract_text
 import media
 import memory_manager as mm
+import tools
 import verify
 from main import run_with_retry
 from media_prompt import to_image_prompt
 from profile_extract import extract_profile
+from reel_api import router as reel_router
 
 load_dotenv()
 API_KEY = os.getenv("AI_SERVICE_KEY", "")
@@ -237,6 +239,8 @@ def run(body: RunRequest):
         body.request,
         extra_feedback=body.past_feedback,
     )
+    # The agents' tools read company/client from this context, never from the LLM
+    token = tools.set_context(body.company_id, body.client_id)
     try:
         result = run_with_retry(
             body.request,
@@ -248,6 +252,8 @@ def run(body: RunRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:300])
+    finally:
+        tools.reset_context(token)
 
     draft = str(result)
     output, verification = verify.check(
@@ -271,6 +277,7 @@ def chat(body: ChatRequest):
         body.message,
         conversation_id=conversation_id,
     )
+    token = tools.set_context(body.company_id, body.client_id)
     try:
         result = run_with_retry(
             body.message,
@@ -283,6 +290,8 @@ def chat(body: ChatRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)[:300])
+    finally:
+        tools.reset_context(token)
 
     draft = str(result)
     output, verification = verify.check(
@@ -424,4 +433,5 @@ if DEBUG_ENDPOINTS:
         return asdict(mm.recall(company_id, client_id, query, conversation_id))
 
 
+protected.include_router(reel_router)  # reel endpoints inherit the API-key check
 app.include_router(protected)

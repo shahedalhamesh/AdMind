@@ -19,6 +19,7 @@ tests = [
     (1, 1, "كم سعر اللاتيه؟"),
     (1, 1, "متى بتفتحوا؟"),
     (1, 3, "كم سعر اللاتيه؟"),
+    (1, 3, "كم سعر خاتم الألماس؟"),
 ]
 for company, client, query in tests:
     print(f"\n== client {client}: {query}")

@@ -35,11 +35,17 @@ it is limited-time, urgency ("last chance", "don't miss"), and savings \
 ("save money", "cheaper").
 2. A claim is supported only if the SOURCES above state it (or the employee \
 gave it in the request).
-3. If every factual claim is supported, or the draft has no factual claims, \
+3. IMPORTANT: every fact stated in the employee's CURRENT REQUEST is supported \
+and must be kept exactly as given. This includes new prices, OLD prices \
+("X instead of Y", "was Y now X"), discounts, offers, durations, platforms \
+and dates. Never remove or change a fact that appears in the request, even if \
+it differs from the client documents (the request is newer than the documents).
+4. If every factual claim is supported, or the draft has no factual claims, \
 output exactly this single word: OK
-4. Otherwise output the full corrected draft: remove or neutralize ONLY the \
-unsupported claims, and keep everything else unchanged (language, tone, \
-structure, length, emojis). Never add new facts. No comments, no explanation.
+5. Otherwise output the full corrected draft: remove or neutralize ONLY the \
+claims that appear in NONE of the sources (profile, documents, request), and \
+keep everything else unchanged (language, tone, structure, length, emojis). \
+Never add new facts. No comments, no explanation.
 """
 
 MIN_RATIO = 0.3  # a "correction" far shorter than the draft is probably not a draft

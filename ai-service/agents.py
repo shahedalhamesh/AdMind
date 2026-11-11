@@ -1,5 +1,6 @@
 from crewai import Agent
 from llm import llm
+from tools import analytics_tools, campaign_tools, client_tools, content_tools
 
 main_agent = Agent(
     role="AdMind Main Agent",
@@ -63,9 +64,13 @@ client_agent = Agent(
         "from (the profile, or the title of the document).\n"
         "3. If the answer is not in those sources, say so plainly and name what "
         "information to add. Do not make up an answer.\n"
-        "Never mention technical problems."
+        "Never mention technical problems.\n"
+         "Tools: the client profile and the reference material are already in "
+        "your task. Call search_client_knowledge ONLY if the answer is not "
+        "there."
     ),
     llm=llm,
+    tools=client_tools,
     verbose=True,
 )
 
@@ -93,9 +98,12 @@ content_agent = Agent(
         "mention technical problems.\n"
         "4. Before answering, re-read every sentence: it must be meaningful, "
         "natural, and on-brand. Fix or remove anything awkward.\n"
-        "5. Output only the deliverable: no introductions, no explanations."
+        "5. Output only the deliverable: no introductions, no explanations.\n"
+         "Tools: run check_avoid_list on your final draft; if it finds "
+        "forbidden words, rewrite without them."
     ),
     llm=llm,
+    tools=content_tools,
     verbose=True,
 )
 
@@ -145,9 +153,12 @@ campaign_agent = Agent(
         "the 'avoid' list, that no fact was invented, and that rules 7 and 8 "
         "are respected.\n"
         "10. Output only the plan: no introduction, no closing remarks, no "
-        "mention of technical problems."
+        "mention of technical problems.\n"
+        "Tools: run check_calendar on your content calendar before answering "
+        "and fix any problem it reports."
     ),
     llm=llm,
+    tools=campaign_tools,
     verbose=True,
 )
 
@@ -209,8 +220,13 @@ analytics_agent = Agent(
         "know.\n"
         "12. Start directly with the first heading. No title line, no "
         "introduction (such as 'Draft analysis:'), no closing remarks, no "
-        "mention of technical problems."
+        "mention of technical problems.\n"
+        "Tools: use calculate_rates for the rates of every item and "
+        "percent_change for changes between two numbers, instead of "
+        "calculating yourself. Use only the numbers it returns. Only call "
+        "calculate_rates with numbers that appear in the request."
     ),
     llm=llm,
+    tools=analytics_tools,
     verbose=True,
 )
