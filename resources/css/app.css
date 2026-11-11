@@ -1,0 +1,130 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =================================
+   AdMind - DARK THEME
+   Navy Mocha
+================================= */
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --background: #242936;
+  --foreground: #F1E9DF;
+
+  --primary: #596174;
+  --primary-foreground: #FFFFFF;
+
+  --secondary: #737C8D;
+  --secondary-foreground: #FFFFFF;
+
+  --tertiary: #927969;
+  --tertiary-foreground: #FFFFFF;
+
+  --card: #343B49;
+  --card-foreground: #F1E9DF;
+
+  --muted: #3B414F;
+  --muted-foreground: #B9BECB;
+
+  --border: #454957;
+  --input: #454957;
+  --ring: #737C8D;
+
+  --accent: #D5C3B2;
+  --accent-foreground: #34333A;
+
+  --brand-panel-bg: linear-gradient(
+    140deg,
+    #414B60 0%,
+    #343B4B 38%,
+    #65554F 72%,
+    #927969 100%
+  );
+  --button-text: #F1E9DF;
+
+  --brand-panel-text: #F7F1E9;
+}
+
+/* =================================
+   AdMind - LIGHT THEME
+   Silver Beige
+================================= */
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --background: #F3F1EE;
+  --foreground: #303542;
+
+  --primary: #68748B;
+  --primary-foreground: #FFFFFF;
+
+  --secondary: #9299A7;
+  --secondary-foreground: #FFFFFF;
+
+  --tertiary: #A88F7D;
+  --tertiary-foreground: #FFFFFF;
+
+ --card: #E1DDD8;
+  --card-foreground: #303542;
+
+  --muted: #EAE4DE;
+  --muted-foreground: #777B85;
+
+  --border: #DFDCE0;
+  --input: #DFDCE0;
+  --ring: #9299A7;
+
+  --accent: #D8C6B5;
+  --accent-foreground: #3A3B43;
+
+  --brand-panel-bg: linear-gradient(
+    140deg,
+    #68748B 0%,
+    #858A99 38%,
+    #B3A092 72%,
+    #D8C6B5 100%
+  );
+  --button-text: #303542;
+
+  --brand-panel-text: #FFFFFF;
+}
+
+/* =================================
+   GLOBAL STYLES
+================================= */
+
+html,
+body,
+#app {
+  min-height: 100%;
+  background-color: var(--background);
+  color: var(--foreground);
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
+}
+
+body {
+  margin: 0;
+}
+
+
+/* Smooth theme transitions */
+* {
+  transition-property: background-color, border-color, color;
+  transition-duration: 300ms;
+}
+
+/* Main content text */
+[data-theme="light"] .theme-text {
+  color: var(--foreground) !important;
+}
+
+[data-theme="dark"] .theme-text {
+  color: var(--foreground) !important;
+}
