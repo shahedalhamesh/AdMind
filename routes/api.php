@@ -8,8 +8,11 @@ use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\ClientDocumentController;
 use App\Http\Controllers\Api\ClientProfileController;
 use App\Http\Controllers\Api\ContentController;
+use App\Http\Controllers\Api\GoalController;
+use App\Http\Controllers\Api\MetricController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PublishController;
+use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SocialAccountController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserController;
@@ -97,6 +100,23 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/', [PublishController::class, 'reschedule'])->middleware('permission:content.update');
         Route::post('/cancel', [PublishController::class, 'cancel'])->middleware('permission:content.update');
         Route::post('/mark-published', [PublishController::class, 'markPublished'])->middleware('permission:content.update');
+    });
+
+    // Performance numbers, goals and reports
+    Route::get('/metrics', [MetricController::class, 'index'])->middleware('permission:reports.view');
+    Route::post('/metrics', [MetricController::class, 'store'])->middleware('permission:reports.create');
+
+    Route::get('/goals', [GoalController::class, 'index'])->middleware('permission:reports.view');
+    Route::post('/goals', [GoalController::class, 'store'])->middleware('permission:reports.create');
+    Route::put('/goals/{id}', [GoalController::class, 'update'])->whereNumber('id')->middleware('permission:reports.update');
+    Route::delete('/goals/{id}', [GoalController::class, 'destroy'])->whereNumber('id')->middleware('permission:reports.delete');
+
+    Route::get('/reports', [ReportController::class, 'index'])->middleware('permission:reports.view');
+    Route::post('/reports/generate', [ReportController::class, 'generate'])->middleware('permission:reports.create');
+    Route::prefix('reports/{id}')->whereNumber('id')->group(function () {
+        Route::get('/', [ReportController::class, 'show'])->middleware('permission:reports.view');
+        Route::put('/visibility', [ReportController::class, 'visibility'])->middleware('permission:reports.update');
+        Route::delete('/', [ReportController::class, 'destroy'])->middleware('permission:reports.delete');
     });
 
     // Approvals
