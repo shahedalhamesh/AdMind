@@ -9,6 +9,8 @@ use App\Http\Controllers\Api\ClientDocumentController;
 use App\Http\Controllers\Api\ClientProfileController;
 use App\Http\Controllers\Api\ContentController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\PublishController;
+use App\Http\Controllers\Api\SocialAccountController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
@@ -37,6 +39,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/documents', [ClientDocumentController::class, 'store'])->middleware('permission:clients.update');
         Route::delete('/documents/{documentId}', [ClientDocumentController::class, 'destroy'])
             ->whereNumber('documentId')->middleware('permission:clients.update');
+
+        Route::get('/social-accounts', [SocialAccountController::class, 'index'])->middleware('permission:clients.view');
+        Route::post('/social-accounts', [SocialAccountController::class, 'store'])->middleware('permission:clients.update');
+        Route::delete('/social-accounts/{accountId}', [SocialAccountController::class, 'destroy'])
+            ->whereNumber('accountId')->middleware('permission:clients.update');
     });
 
     // Tasks
@@ -81,6 +88,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/versions', [ContentController::class, 'addVersion'])->middleware('permission:content.update');
         Route::post('/submit', [ContentController::class, 'submit'])->middleware('permission:content.update');
         Route::post('/revise', [ContentController::class, 'revise'])->middleware('permission:content.update');
+        Route::post('/schedule', [PublishController::class, 'schedule'])->middleware('permission:content.update');
+    });
+
+    // Publishing
+    Route::get('/publish-jobs', [PublishController::class, 'index'])->middleware('permission:content.view');
+    Route::prefix('publish-jobs/{id}')->whereNumber('id')->group(function () {
+        Route::put('/', [PublishController::class, 'reschedule'])->middleware('permission:content.update');
+        Route::post('/cancel', [PublishController::class, 'cancel'])->middleware('permission:content.update');
+        Route::post('/mark-published', [PublishController::class, 'markPublished'])->middleware('permission:content.update');
     });
 
     // Approvals
