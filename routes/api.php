@@ -3,10 +3,12 @@
 use App\Http\Controllers\Api\AgentController;
 use App\Http\Controllers\Api\ApprovalController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CampaignController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\ClientDocumentController;
 use App\Http\Controllers\Api\ClientProfileController;
 use App\Http\Controllers\Api\ContentController;
+use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -33,6 +35,29 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/documents', [ClientDocumentController::class, 'store'])->middleware('permission:clients.update');
         Route::delete('/documents/{documentId}', [ClientDocumentController::class, 'destroy'])
             ->whereNumber('documentId')->middleware('permission:clients.update');
+    });
+
+    // Tasks
+    Route::get('/tasks', [TaskController::class, 'index'])->middleware('permission:tasks.view');
+    Route::post('/tasks', [TaskController::class, 'store'])->middleware('permission:tasks.create');
+
+    Route::prefix('tasks/{id}')->whereNumber('id')->group(function () {
+        Route::get('/', [TaskController::class, 'show'])->middleware('permission:tasks.view');
+        Route::put('/', [TaskController::class, 'update'])->middleware('permission:tasks.update');
+        Route::delete('/', [TaskController::class, 'destroy'])->middleware('permission:tasks.delete');
+        Route::post('/dependencies', [TaskController::class, 'addDependency'])->middleware('permission:tasks.assign');
+        Route::delete('/dependencies/{dependsOnId}', [TaskController::class, 'removeDependency'])
+            ->whereNumber('dependsOnId')->middleware('permission:tasks.assign');
+    });
+
+    // Campaigns
+    Route::get('/campaigns', [CampaignController::class, 'index'])->middleware('permission:campaigns.view');
+    Route::post('/campaigns', [CampaignController::class, 'store'])->middleware('permission:campaigns.create');
+
+    Route::prefix('campaigns/{id}')->whereNumber('id')->group(function () {
+        Route::get('/', [CampaignController::class, 'show'])->middleware('permission:campaigns.view');
+        Route::put('/', [CampaignController::class, 'update'])->middleware('permission:campaigns.update');
+        Route::delete('/', [CampaignController::class, 'destroy'])->middleware('permission:campaigns.delete');
     });
 
     // Users and roles
