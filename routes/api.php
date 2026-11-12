@@ -9,6 +9,8 @@ use App\Http\Controllers\Api\ClientDocumentController;
 use App\Http\Controllers\Api\ClientProfileController;
 use App\Http\Controllers\Api\ContentController;
 use App\Http\Controllers\Api\GoalController;
+use App\Http\Controllers\Api\MeetingActionItemController;
+use App\Http\Controllers\Api\MeetingController;
 use App\Http\Controllers\Api\MetricController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PublishController;
@@ -117,6 +119,22 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [ReportController::class, 'show'])->middleware('permission:reports.view');
         Route::put('/visibility', [ReportController::class, 'visibility'])->middleware('permission:reports.update');
         Route::delete('/', [ReportController::class, 'destroy'])->middleware('permission:reports.delete');
+    });
+
+    // Meetings
+    Route::get('/meetings', [MeetingController::class, 'index'])->middleware('permission:clients.view');
+    Route::post('/meetings', [MeetingController::class, 'store'])->middleware('permission:agents.run');
+    Route::prefix('meetings/{id}')->whereNumber('id')->group(function () {
+        Route::get('/', [MeetingController::class, 'show'])->middleware('permission:clients.view');
+        Route::put('/', [MeetingController::class, 'update'])->middleware('permission:agents.run');
+        Route::delete('/', [MeetingController::class, 'destroy'])->middleware('permission:tasks.assign');
+        Route::post('/summarize', [MeetingController::class, 'summarize'])->middleware('permission:agents.run');
+        Route::post('/action-items', [MeetingController::class, 'addActionItem'])->middleware('permission:agents.run');
+    });
+    Route::prefix('meeting-action-items/{id}')->whereNumber('id')->group(function () {
+        Route::put('/', [MeetingActionItemController::class, 'update'])->middleware('permission:agents.run');
+        Route::post('/confirm', [MeetingActionItemController::class, 'confirm'])->middleware('permission:tasks.assign');
+        Route::post('/reject', [MeetingActionItemController::class, 'reject'])->middleware('permission:tasks.assign');
     });
 
     // Approvals

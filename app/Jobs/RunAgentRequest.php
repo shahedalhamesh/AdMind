@@ -5,7 +5,10 @@ namespace App\Jobs;
 use App\Models\AgentRun;
 use App\Models\Client;
 use App\Models\ContentItem;
+use App\Models\Meeting;
+use App\Models\MeetingActionItem;
 use App\Models\Message;
+use App\Models\User;
 use App\Models\Task;
 use App\Services\AiService;
 use App\Services\ContentService;
@@ -84,6 +87,8 @@ class RunAgentRequest implements ShouldQueue
             $this->afterTask($run);
         } elseif ($mode === 'revise') {
             $this->afterRevision($run);
+        } elseif ($mode === 'meeting') {
+            $this->afterMeeting($run);
         }
     }
 
@@ -172,6 +177,69 @@ class RunAgentRequest implements ShouldQueue
             ['task_id' => $item->task_id, 'content_id' => $item->id, 'agent_run_id' => $run->id]);
     }
 
+    /** The AI summarized a meeting: save the summary, insights and proposed action items. */
+    private function afterMeeting(AgentRun $run): void
+    {
+        $meeting = Meeting::findOrFail($run->input['meeting_id']);
+        $parsed = $this->parseJson((string) $run->output);
+
+        if (! $parsed || empty($parsed['summary'])) {
+            $meeting->forceFill(['status' => 'failed'])->save();
+            ContentService::notify($run->company_id, ContentService::managerIds($run->company_id), 'failure',
+                "The AI could not summarize the meeting: {$meeting->title}",
+                'The answer was not in the expected format. Try again.', ['meeting_id' => $meeting->id, 'agent_run_id' => $run->id]);
+
+            return;
+        }
+
+        $staff = User::where('company_id', $run->company_id)->whereNull('client_id')->where('status', 'active')->get(['id', 'name']);
+
+        DB::transaction(function () use ($meeting, $parsed, $staff, $run) {
+            $meeting->forceFill([
+                'summary' => (string) $parsed['summary'],
+                'key_insights' => array_values(array_filter((array) ($parsed['key_insights'] ?? []), 'is_string')),
+                'status' => 'summarized',
+            ])->save();
+
+            // a new run replaces the earlier proposals (confirmed and rejected items stay)
+            MeetingActionItem::where('meeting_id', $meeting->id)->where('status', 'proposed')->delete();
+
+            foreach ((array) ($parsed['action_items'] ?? []) as $a) {
+                if (! is_array($a) || blank($a['description'] ?? null)) {
+                    continue;
+                }
+                $name = mb_strtolower(trim((string) ($a['assignee'] ?? '')));
+                $assignee = $name === '' ? null : $staff->first(fn ($u) => mb_strtolower($u->name) === $name);
+                $due = $a['due_date'] ?? null;
+
+                MeetingActionItem::forceCreate([
+                    'company_id' => $run->company_id,
+                    'meeting_id' => $meeting->id,
+                    'description' => (string) $a['description'],
+                    'suggested_assignee_id' => $assignee?->id,
+                    'due_date' => is_string($due) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $due) ? $due : null,
+                    'status' => 'proposed',
+                ]);
+            }
+        });
+
+        ContentService::notify($run->company_id, ContentService::managerIds($run->company_id), 'meeting_summarized',
+            "Meeting summary ready: {$meeting->title}", null, ['meeting_id' => $meeting->id, 'agent_run_id' => $run->id]);
+    }
+
+    /** The AI should answer with JSON only, but may wrap it in a code fence or add a sentence. */
+    private function parseJson(string $text): ?array
+    {
+        $start = strpos($text, '{');
+        $end = strrpos($text, '}');
+        if ($start === false || $end === false || $end < $start) {
+            return null;
+        }
+        $data = json_decode(substr($text, $start, $end - $start + 1), true);
+
+        return is_array($data) ? $data : null;
+    }
+
     public function failed(Throwable $e): void
     {
         AgentRun::whereKey($this->agentRunId)->update([
@@ -182,6 +250,14 @@ class RunAgentRequest implements ShouldQueue
 
         $run = AgentRun::find($this->agentRunId);
         $mode = $run?->input['mode'] ?? null;
+        if ($mode === 'meeting') {
+            Meeting::whereKey($run->input['meeting_id'] ?? 0)->update(['status' => 'failed']);
+            ContentService::notify($run->company_id, ContentService::managerIds($run->company_id), 'failure',
+                'The AI could not summarize the meeting', mb_substr($e->getMessage(), 0, 300),
+                ['meeting_id' => $run->input['meeting_id'] ?? null, 'agent_run_id' => $run->id]);
+
+            return;
+        }
         if (! in_array($mode, ['task', 'revise'], true)) {
             return;
         }
