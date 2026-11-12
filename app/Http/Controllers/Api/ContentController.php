@@ -198,42 +198,29 @@ class ContentController extends Controller
     }
 
     /**
-     * Send a draft for approval. `requested_from_id` is optional: by default the request goes
-     * to the client's own login (a user linked to this client), else to the client's responsible employee.
+     * Send a draft for approval. Stage 1: a person without approvals.manage (an employee) sends it to a Manager
+     * (internal review); the client sees nothing yet. A Manager or Owner sends it straight to the client
+     * (stage 2): by default to the client's own login, else to the client's responsible employee;
+     * `requested_from_id` (optional) overrides the approver.
      */
     public function submit(Request $request, int $id): JsonResponse
     {
-        $item = ContentItem::with('client')->findOrFail($id);
+        $item = ContentItem::findOrFail($id);
         abort_unless($item->status === 'draft' && $item->current_version_id, 422, 'Only a draft with a version can be submitted.');
 
         $data = $request->validate(['requested_from_id' => ['nullable', 'integer']]);
 
-        $approverId = $data['requested_from_id'] ?? User::where('company_id', $item->company_id)
-            ->where('client_id', $item->client_id)->where('status', 'active')->value('id')
-            ?? $item->client?->responsible_user_id;
-        abort_unless($approverId, 422, 'No approver found. Send requested_from_id.');
+        $internal = ! $request->user()->hasPermission('approvals.manage');
 
-        $approver = User::where('company_id', $item->company_id)->where('status', 'active')->findOrFail($approverId);
+        $approval = DB::transaction(fn () => $internal
+            ? ContentService::requestInternalReview($item, $request->user()->id)
+            : ContentService::requestClientApproval($item, $data['requested_from_id'] ?? null, $request->user()->id));
 
-        $approval = DB::transaction(function () use ($item, $approver) {
-            $approval = Approval::forceCreate([
-                'company_id' => $item->company_id,
-                'subject_type' => 'content_item',
-                'subject_id' => $item->id,
-                'requested_from_type' => $approver->client_id ? 'client' : 'user',
-                'requested_from_id' => $approver->id,
-                'reason' => 'policy',
-                'status' => 'pending',
-            ]);
-            $item->forceFill(['status' => 'in_review'])->save();
-
-            return $approval;
-        });
-
-        ContentService::notify($item->company_id, [$approver->id], 'approval_needed',
-            "Please review: {$item->title}", null, ['content_id' => $item->id, 'approval_id' => $approval->id]);
-
-        return response()->json(['content_status' => $item->status, 'approval' => $approval], 201);
+        return response()->json([
+            'stage' => $internal ? 'internal' : 'client',
+            'content_status' => $item->status,
+            'approval' => $approval,
+        ], 201);
     }
 
     /**

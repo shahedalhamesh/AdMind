@@ -72,20 +72,32 @@ class ApprovalController extends Controller
             'rejected' => 'draft',
         };
 
-        DB::transaction(function () use ($approval, $item, $data, $newStatus) {
+        // reason "escalation" = stage 1, the internal manager review; anything else = the client's decision
+        $internal = $approval->reason === 'escalation';
+        $nextApproval = null;
+
+        DB::transaction(function () use ($approval, $item, $data, &$newStatus, $internal, &$nextApproval) {
             $approval->forceFill([
                 'status' => $data['decision'],
                 'comment' => $data['comment'] ?? null,
                 'decided_at' => now(),
             ])->save();
-            $item->forceFill(['status' => $newStatus])->save();
+
+            if ($internal && $data['decision'] === 'approved') {
+                // the manager is happy: now the client gets it
+                $nextApproval = ContentService::requestClientApproval($item, null, $approval->requested_by_id);
+                $newStatus = 'in_review';
+            } else {
+                $item->forceFill(['status' => $newStatus])->save();
+            }
         });
 
         // Teach the AI: only when the text being judged is what the AI wrote (the current
         // version came from an AI run). A version edited by a person is not the AI's work.
         $versionRunId = $item->currentVersion?->agent_run_id;
         $episodeId = $versionRunId ? AgentRun::whereKey($versionRunId)->value('episode_id') : null;
-        if ($episodeId) {
+        // A manager approving internally is not the final word: the AI learns from the client's decision
+        if ($episodeId && ! ($internal && $data['decision'] === 'approved')) {
             SendAiFeedback::dispatch(
                 $approval->company_id,
                 (int) $episodeId,
@@ -95,7 +107,7 @@ class ApprovalController extends Controller
         }
 
         // A content item that came from a task moves the task along
-        if ($item->task_id) {
+        if ($item->task_id && ! ($internal && $data['decision'] === 'approved')) {
             $task = Task::find($item->task_id);
             if ($task) {
                 $task->forceFill($data['decision'] === 'approved'
@@ -104,17 +116,26 @@ class ApprovalController extends Controller
             }
         }
 
+        if ($internal && $data['decision'] === 'approved') {
+            return response()->json([
+                'stage' => 'internal',
+                'approval' => $approval,
+                'content_status' => $newStatus,
+                'next_approval' => $nextApproval,
+            ]);
+        }
+
         // Tell the people who reviewed it (not the one who just decided)
-        $reviewers = array_diff(
+        $reviewers = array_diff(array_unique(array_filter(array_merge(
             ContentService::reviewerIds($approval->company_id, Client::find($item->client_id)),
-            [$user->id]
-        );
+            [$approval->requested_by_id] // whoever sent it for approval
+        ))), [$user->id]);
         ContentService::notify($approval->company_id, $reviewers,
             $data['decision'] === 'approved' ? 'content_approved' : 'client_feedback',
-            ($data['decision'] === 'approved' ? 'Approved: ' : 'Changes requested: ') . $item->title,
+            ($data['decision'] === 'approved' ? 'Approved: ' : ($internal ? 'Manager asks for changes: ' : 'Changes requested: ')) . $item->title,
             $data['comment'] ?? null,
             ['content_id' => $item->id, 'task_id' => $item->task_id, 'decision' => $data['decision']]);
 
-        return response()->json(['approval' => $approval, 'content_status' => $newStatus]);
+        return response()->json(['stage' => $internal ? 'internal' : 'client', 'approval' => $approval, 'content_status' => $newStatus]);
     }
 }
