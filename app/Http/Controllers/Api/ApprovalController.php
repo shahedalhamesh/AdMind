@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SendAiFeedback;
+use App\Models\AgentRun;
 use App\Models\Approval;
 use App\Models\ContentItem;
 use Illuminate\Http\JsonResponse;
@@ -75,6 +77,19 @@ class ApprovalController extends Controller
             ])->save();
             $item->forceFill(['status' => $newStatus])->save();
         });
+
+        // Teach the AI: only when the text being judged is what the AI wrote (the current
+        // version came from an AI run). A version edited by a person is not the AI's work.
+        $versionRunId = $item->currentVersion?->agent_run_id;
+        $episodeId = $versionRunId ? AgentRun::whereKey($versionRunId)->value('episode_id') : null;
+        if ($episodeId) {
+            SendAiFeedback::dispatch(
+                $approval->company_id,
+                (int) $episodeId,
+                $data['decision'] === 'approved' ? 'approved' : 'rejected', // "changes requested" is negative feedback too
+                (string) ($data['comment'] ?? '')
+            );
+        }
 
         return response()->json(['approval' => $approval, 'content_status' => $newStatus]);
     }

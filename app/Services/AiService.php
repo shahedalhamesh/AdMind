@@ -39,6 +39,19 @@ class AiService
         ])->json();
     }
 
+    // ----------------------------------------------------------- feedback
+
+    /** Tell the AI how a client judged one of its answers (status: approved | rejected). */
+    public function sendFeedback(int $companyId, int $episodeId, string $status, string $feedback): void
+    {
+        $this->send('POST', '/feedback', [
+            'company_id' => $companyId,
+            'episode_id' => $episodeId,
+            'status' => $status,
+            'feedback' => $feedback,
+        ]);
+    }
+
     // ----------------------------------------------------------- profile
 
     /** Create or fully replace the client's profile in the AI memory. */

@@ -50,6 +50,7 @@ class RunAgentRequest implements ShouldQueue
         $run->forceFill([
             'status' => 'succeeded',
             'output' => $result['result'] ?? '',
+            'episode_id' => $result['episode_id'] ?? null,
             'verification_status' => $verification,
             'original_output' => $result['original'] ?? null,
             'finished_at' => now(),
