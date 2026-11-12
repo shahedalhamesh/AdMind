@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AdminCompanyController;
 use App\Http\Controllers\Api\AgentController;
 use App\Http\Controllers\Api\ApprovalController;
 use App\Http\Controllers\Api\AuthController;
@@ -21,11 +22,16 @@ use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
 Route::post('/login/google', [AuthController::class, 'loginGoogle'])->middleware('throttle:10,1');
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
+
+    // Platform admin: the agencies using AdMind
+    Route::get('/admin/companies', [AdminCompanyController::class, 'index']);
+    Route::put('/admin/companies/{id}', [AdminCompanyController::class, 'update'])->whereNumber('id');
 
     // Clients
     Route::get('/clients', [ClientController::class, 'index'])->middleware('permission:clients.view');

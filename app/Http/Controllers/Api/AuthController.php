@@ -3,7 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
+use App\Models\Plan;
+use App\Models\Role;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -11,6 +15,55 @@ use Illuminate\Support\Facades\Http;
 
 class AuthController extends Controller
 {
+    /**
+     * A new agency signs up: creates the company (free plan, trial), its four default roles and the first
+     * user, who becomes the Owner. Returns the same payload as login (the Owner is logged in at once).
+     */
+    public function register(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'company_name' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email:rfc', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'string', 'min:8', 'max:100'],
+            'device_name' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $user = DB::transaction(function () use ($data) {
+            $plan = Plan::where('slug', 'free')->where('is_active', true)->first();
+
+            $company = Company::forceCreate([
+                'name' => $data['company_name'],
+                'plan' => 'free',
+                'plan_id' => $plan?->id,
+                'subscription_status' => 'trial',
+                'features' => [],
+            ]);
+
+            $roles = [];
+            foreach (config('permissions.roles') as $roleName => $permissions) {
+                $roles[$roleName] = Role::forceCreate([
+                    'company_id' => $company->id, 'name' => $roleName, 'permissions' => $permissions,
+                ]);
+            }
+
+            return User::forceCreate([
+                'company_id' => $company->id,
+                'role_id' => $roles['Owner']->id,
+                'name' => $data['name'],
+                'email' => mb_strtolower($data['email']),
+                'password' => $data['password'],
+                'status' => 'active',
+                'last_login_at' => now(),
+            ]);
+        });
+
+        return response()->json([
+            'token' => $user->createToken($data['device_name'] ?? 'api')->plainTextToken,
+            'user' => $this->userPayload($user),
+        ], 201);
+    }
+
     public function login(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -27,6 +80,10 @@ class AuthController extends Controller
 
         if (! $user->isActive()) {
             return response()->json(['message' => 'This account is disabled.'], 403);
+        }
+
+        if ($message = $this->companyBlockedMessage($user)) {
+            return response()->json(['message' => $message], 403);
         }
 
         $user->forceFill(['last_login_at' => now()])->save();
@@ -77,6 +134,10 @@ class AuthController extends Controller
             return response()->json(['message' => 'This account is disabled.'], 403);
         }
 
+        if ($message = $this->companyBlockedMessage($user)) {
+            return response()->json(['message' => $message], 403);
+        }
+
         $user->forceFill(['last_login_at' => now()])->save();
 
         return response()->json([
@@ -95,6 +156,18 @@ class AuthController extends Controller
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Logged out.']);
+    }
+
+    /** A suspended or cancelled company cannot sign in (the Platform Admin has no company). */
+    private function companyBlockedMessage(User $user): ?string
+    {
+        if ($user->company_id === null) {
+            return null;
+        }
+        $status = Company::whereKey($user->company_id)->value('subscription_status');
+
+        return in_array($status, ['suspended', 'cancelled'], true)
+            ? 'This company subscription is not active. Contact support.' : null;
     }
 
     private function userPayload(User $user): array
