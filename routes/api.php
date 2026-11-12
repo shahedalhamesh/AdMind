@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\ClientDocumentController;
 use App\Http\Controllers\Api\ClientProfileController;
 use App\Http\Controllers\Api\ContentController;
+use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
@@ -33,6 +34,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/documents/{documentId}', [ClientDocumentController::class, 'destroy'])
             ->whereNumber('documentId')->middleware('permission:clients.update');
     });
+
+    // Users and roles
+    Route::get('/users', [UserController::class, 'index'])->middleware('permission:users.view');
+    Route::post('/users', [UserController::class, 'store'])->middleware('permission:users.create');
+    Route::get('/users/{id}', [UserController::class, 'show'])->whereNumber('id')->middleware('permission:users.view');
+    Route::put('/users/{id}', [UserController::class, 'update'])->whereNumber('id')->middleware('permission:users.update');
+    Route::get('/roles', [UserController::class, 'roles'])->middleware('permission:users.view');
+    Route::post('/me/password', [UserController::class, 'changePassword']);
 
     // Content
     Route::get('/content', [ContentController::class, 'index'])->middleware('permission:content.view');
