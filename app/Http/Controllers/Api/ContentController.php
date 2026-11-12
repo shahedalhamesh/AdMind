@@ -11,6 +11,8 @@ use App\Models\ContentItem;
 use App\Models\ContentVersion;
 use App\Models\Task;
 use App\Models\User;
+use App\Jobs\SendAiFeedback;
+use App\Services\ContentService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -115,9 +117,9 @@ class ContentController extends Controller
                 'is_example' => false,
             ]);
 
-            $version = $this->createVersion($item, [
+            $version = ContentService::createVersion($item, [
                 'body' => $body,
-                'language' => $data['language'] ?? $this->detectLanguage($body),
+                'language' => $data['language'] ?? ContentService::detectLanguage($body),
                 'hashtags' => $data['hashtags'] ?? [],
                 'script' => $data['script'] ?? null,
                 'instruction' => null,
@@ -179,9 +181,9 @@ class ContentController extends Controller
         $user = $request->user();
 
         $version = DB::transaction(function () use ($item, $data, $user) {
-            $version = $this->createVersion($item, [
+            $version = ContentService::createVersion($item, [
                 'body' => $data['body'],
-                'language' => $data['language'] ?? $this->detectLanguage($data['body']),
+                'language' => $data['language'] ?? ContentService::detectLanguage($data['body']),
                 'hashtags' => $data['hashtags'] ?? [],
                 'script' => $data['script'] ?? null,
                 'instruction' => $data['instruction'] ?? null,
@@ -228,7 +230,41 @@ class ContentController extends Controller
             return $approval;
         });
 
+        ContentService::notify($item->company_id, [$approver->id], 'approval_needed',
+            "Please review: {$item->title}", null, ['content_id' => $item->id, 'approval_id' => $approval->id]);
+
         return response()->json(['content_status' => $item->status, 'approval' => $approval], 201);
+    }
+
+    /**
+     * The employee reviewed the text and gives notes: the AI rewrites it and saves a new version
+     * (status back to draft). Returns 202 + agent_run_id; poll GET /agent/runs/{id}.
+     */
+    public function revise(Request $request, int $id): JsonResponse
+    {
+        $item = ContentItem::with('currentVersion')->findOrFail($id);
+        abort_unless(
+            in_array($item->status, ['draft', 'revision_requested', 'approved'], true) && $item->currentVersion,
+            422,
+            'This content cannot be revised in its current status.'
+        );
+
+        $data = $request->validate(['notes' => ['required', 'string', 'max:4000']]);
+
+        $busy = AgentRun::where('status', 'running')->where('client_id', $item->client_id)
+            ->where('input->content_id', $item->id)->exists();
+        abort_if($busy, 422, 'The AI is already working on this content.');
+
+        // The notes are negative feedback on the version the AI wrote before
+        $episodeId = $item->currentVersion->agent_run_id
+            ? AgentRun::whereKey($item->currentVersion->agent_run_id)->value('episode_id') : null;
+        if ($episodeId) {
+            SendAiFeedback::dispatch($item->company_id, (int) $episodeId, 'rejected', $data['notes']);
+        }
+
+        $run = ContentService::startRevision($item, $data['notes']);
+
+        return response()->json(['agent_run_id' => $run->id, 'status' => 'running'], 202);
     }
 
     // ---------------------------------------------------------------- helpers
@@ -244,30 +280,5 @@ class ContentController extends Controller
         }
 
         return $query;
-    }
-
-    private function createVersion(ContentItem $item, array $fields, string $byType, ?int $byId, ?int $runId): ContentVersion
-    {
-        return ContentVersion::forceCreate([
-            'company_id' => $item->company_id,
-            'content_id' => $item->id,
-            'version_number' => ((int) ContentVersion::where('content_id', $item->id)->max('version_number')) + 1,
-            'language' => $fields['language'],
-            'body' => $fields['body'],
-            'hashtags' => $fields['hashtags'],
-            'script' => $fields['script'],
-            'instruction' => $fields['instruction'],
-            'created_by_type' => $byType,
-            'created_by_id' => $byId,
-            'agent_run_id' => $runId,
-        ]);
-    }
-
-    private function detectLanguage(string $text): string
-    {
-        $arabic = preg_match_all('/\p{Arabic}/u', $text);
-        $latin = preg_match_all('/[A-Za-z]/', $text);
-
-        return $arabic >= $latin ? 'ar' : 'en';
     }
 }

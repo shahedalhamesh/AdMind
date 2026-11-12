@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Jobs\SendAiFeedback;
 use App\Models\AgentRun;
 use App\Models\Approval;
+use App\Models\Client;
 use App\Models\ContentItem;
+use App\Models\Task;
+use App\Services\ContentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -90,6 +93,27 @@ class ApprovalController extends Controller
                 (string) ($data['comment'] ?? '')
             );
         }
+
+        // A content item that came from a task moves the task along
+        if ($item->task_id) {
+            $task = Task::find($item->task_id);
+            if ($task) {
+                $task->forceFill($data['decision'] === 'approved'
+                    ? ['status' => 'completed', 'completed_at' => now()]
+                    : ['status' => 'in_progress', 'completed_at' => null])->save();
+            }
+        }
+
+        // Tell the people who reviewed it (not the one who just decided)
+        $reviewers = array_diff(
+            ContentService::reviewerIds($approval->company_id, Client::find($item->client_id)),
+            [$user->id]
+        );
+        ContentService::notify($approval->company_id, $reviewers,
+            $data['decision'] === 'approved' ? 'content_approved' : 'client_feedback',
+            ($data['decision'] === 'approved' ? 'Approved: ' : 'Changes requested: ') . $item->title,
+            $data['comment'] ?? null,
+            ['content_id' => $item->id, 'task_id' => $item->task_id, 'decision' => $data['decision']]);
 
         return response()->json(['approval' => $approval, 'content_status' => $newStatus]);
     }

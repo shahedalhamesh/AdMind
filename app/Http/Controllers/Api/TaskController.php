@@ -7,6 +7,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Task;
 use App\Models\TaskDependency;
+use App\Models\AgentRun;
+use App\Jobs\RunAgentRequest;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -179,6 +181,67 @@ class TaskController extends Controller
         return response()->json($task->fresh(['assigneeUser:id,name', 'client:id,name']));
     }
 
+    /**
+     * Let the AI do the task (assignee must be the content agent, task needs a client).
+     * The result becomes a content draft linked to the task; the task goes to waiting_approval and the
+     * client's responsible employee gets a notification. Returns 202 + agent_run_id.
+     * Body (all optional): content_type (post|reel|video|story|ad), platform, language.
+     */
+    public function run(Request $request, int $id): JsonResponse
+    {
+        $task = Task::findOrFail($id);
+
+        abort_unless($task->assignee_type === 'agent' && $task->assignee_agent === 'content', 422,
+            'Only tasks assigned to the content agent can be run by the AI for now.');
+        abort_unless($task->client_id, 422, 'The task needs a client.');
+        abort_unless(in_array($task->status, ['new', 'failed', 'waiting_info'], true), 422,
+            'This task is already running or finished.');
+
+        $blocked = TaskDependency::where('task_id', $task->id)
+            ->whereIn('depends_on_task_id', Task::where('status', '!=', 'completed')->select('id'))->exists();
+        abort_if($blocked, 422, 'This task is blocked by unfinished tasks.');
+
+        abort_if(AgentRun::where('task_id', $task->id)->where('status', 'running')->exists(), 422,
+            'The AI is already working on this task.');
+
+        $data = $request->validate([
+            'content_type' => ['nullable', Rule::in(['post', 'reel', 'video', 'story', 'ad'])],
+            'platform' => ['nullable', Rule::in(['instagram', 'facebook', 'tiktok', 'x', 'linkedin', 'snapchat'])],
+            'language' => ['nullable', 'string', 'max:30'],
+        ]);
+        $contentType = $data['content_type'] ?? 'post';
+        $platform = $data['platform'] ?? 'instagram';
+        $language = $data['language'] ?? 'English';
+
+        $message = "Task: {$task->title}\n"
+            . ($task->description ? "Details: {$task->description}\n" : '')
+            . "Write a {$contentType} for {$platform} in {$language}, following the client's brand profile. "
+            . 'Return only the final text, ready to publish. '
+            . 'If information is missing, answer with "Note to employee:" and say what is missing.';
+
+        $run = AgentRun::forceCreate([
+            'company_id' => $task->company_id,
+            'task_id' => $task->id,
+            'client_id' => $task->client_id,
+            'agent' => 'content',
+            'status' => 'running',
+            'input' => [
+                'mode' => 'task',
+                'message' => $message,
+                'language' => $language,
+                'content_type' => $contentType,
+                'platform' => $platform,
+            ],
+            'started_at' => now(),
+        ]);
+
+        $task->forceFill(['status' => 'in_progress', 'started_at' => $task->started_at ?? now(), 'completed_at' => null])->save();
+
+        RunAgentRequest::dispatch($run->id);
+
+        return response()->json(['agent_run_id' => $run->id, 'status' => 'running'], 202);
+    }
+
     /** Deletes the task and its subtasks. */
     public function destroy(int $id): JsonResponse
     {
@@ -229,7 +292,14 @@ class TaskController extends Controller
         $user = $request->user();
 
         if ($user->company_id !== null && ! $user->hasPermission('tasks.assign')) {
-            $query->where('assignee_user_id', $user->id);
+            // own tasks, plus tasks given to the AI for a client this person is responsible for
+            $query->where(function ($q) use ($user) {
+                $q->where('assignee_user_id', $user->id)
+                    ->orWhere(function ($q2) use ($user) {
+                        $q2->where('assignee_type', 'agent')
+                            ->whereIn('client_id', Client::where('responsible_user_id', $user->id)->select('id'));
+                    });
+            });
         }
 
         return $query;

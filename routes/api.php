@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\ClientDocumentController;
 use App\Http\Controllers\Api\ClientProfileController;
 use App\Http\Controllers\Api\ContentController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
@@ -45,6 +46,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [TaskController::class, 'show'])->middleware('permission:tasks.view');
         Route::put('/', [TaskController::class, 'update'])->middleware('permission:tasks.update');
         Route::delete('/', [TaskController::class, 'destroy'])->middleware('permission:tasks.delete');
+        Route::post('/run', [TaskController::class, 'run'])->middleware('permission:tasks.assign');
         Route::post('/dependencies', [TaskController::class, 'addDependency'])->middleware('permission:tasks.assign');
         Route::delete('/dependencies/{dependsOnId}', [TaskController::class, 'removeDependency'])
             ->whereNumber('dependsOnId')->middleware('permission:tasks.assign');
@@ -77,12 +79,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/', [ContentController::class, 'update'])->middleware('permission:content.update');
         Route::post('/versions', [ContentController::class, 'addVersion'])->middleware('permission:content.update');
         Route::post('/submit', [ContentController::class, 'submit'])->middleware('permission:content.update');
+        Route::post('/revise', [ContentController::class, 'revise'])->middleware('permission:content.update');
     });
 
     // Approvals
     Route::get('/approvals', [ApprovalController::class, 'index'])->middleware('permission:approvals.respond');
     Route::post('/approvals/{id}/decision', [ApprovalController::class, 'decide'])
         ->whereNumber('id')->middleware('permission:approvals.respond');
+
+    // Notifications (own)
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'readAll']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'read'])->whereNumber('id');
 
     // AI agents
     Route::middleware('permission:agents.run')->prefix('agent')->group(function () {
