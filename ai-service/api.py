@@ -25,6 +25,7 @@ from extract import extract_text
 import media
 import memory_manager as mm
 import tools
+import transcribe
 import verify
 from main import run_with_retry
 from media_prompt import to_image_prompt
@@ -333,6 +334,40 @@ def delete_client(company_id: int, client_id: int, confirm: bool = False):
             status_code=400, detail="Pass confirm=true to delete this client's data"
         )
     return {"deleted": mm.forget_client(company_id, client_id)}
+
+
+# ---------------------------------------------------------------- speech to text
+
+MAX_AUDIO = 50 * 1024 * 1024  # 50 MB
+AUDIO_TYPES = {".webm", ".mp3", ".wav", ".m4a", ".ogg", ".mp4", ".aac", ".flac"}
+
+
+@protected.post("/transcribe")
+def transcribe_audio(
+    language: str = Form(""),  # "ar", "en"... empty = detect automatically
+    file: UploadFile = File(...),
+):
+    """Turn a recording (for example a meeting) into text. Runs on this machine, no quota.
+    A long recording can take several minutes. One recording at a time."""
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in AUDIO_TYPES:
+        raise HTTPException(
+            status_code=415, detail="Unsupported audio type: " + ", ".join(sorted(AUDIO_TYPES))
+        )
+    data = file.file.read(MAX_AUDIO + 1)
+    if len(data) > MAX_AUDIO:
+        raise HTTPException(status_code=413, detail="Recording too large (max 50 MB)")
+    try:
+        result = transcribe.transcribe_bytes(data, suffix, language.strip() or None)
+    except ImportError:
+        raise HTTPException(
+            status_code=503, detail="faster-whisper is not installed on the AI service"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:300])
+    if not result["text"].strip():
+        raise HTTPException(status_code=422, detail="No speech found in the recording")
+    return result
 
 
 # ---------------------------------------------------------------- media
