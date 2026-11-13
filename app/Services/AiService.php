@@ -95,9 +95,17 @@ class AiService
         $this->send('DELETE', '/knowledge/' . rawurlencode($docId) . '?' . http_build_query(['company_id' => $companyId]), [], null, [404]);
     }
 
+    // ------------------------------------------------------- transcription
+
+    /** Speech to text. Returns ['text' => ..., 'language' => ..., 'duration' => ...]. Slow: run it in a queue job. */
+    public function transcribe(string $absolutePath, ?string $language = null): array
+    {
+        return $this->send('POST', '/transcribe', array_filter(['language' => $language]), null, [], $absolutePath, 840)->json();
+    }
+
     // ------------------------------------------------------------- http
 
-    private function send(string $method, string $path, array $payload = [], ?UploadedFile $file = null, array $okStatuses = []): Response
+    private function send(string $method, string $path, array $payload = [], ?UploadedFile $file = null, array $okStatuses = [], ?string $filePath = null, ?int $timeout = null): Response
     {
         $key = config('services.ai.key');
         if (! $key) {
@@ -108,10 +116,14 @@ class AiService
             $http = Http::baseUrl(rtrim(config('services.ai.url'), '/'))
                 ->withHeaders(['X-API-Key' => $key])
                 ->acceptJson()
-                ->timeout(config('services.ai.timeout'));
+                ->timeout($timeout ?? config('services.ai.timeout'));
 
             if ($file) {
                 $http = $http->attach('file', file_get_contents($file->getRealPath()), $file->getClientOriginalName());
+            }
+
+            if ($filePath) {
+                $http = $http->attach('file', file_get_contents($filePath), basename($filePath));
             }
 
             $response = match ($method) {

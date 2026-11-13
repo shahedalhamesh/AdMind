@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\RunAgentRequest;
+use App\Jobs\TranscribeMeeting;
 use App\Models\AgentRun;
 use App\Models\Client;
 use App\Models\Meeting;
@@ -11,6 +12,7 @@ use App\Models\MeetingActionItem;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 /**
@@ -99,6 +101,34 @@ class MeetingController extends Controller
         $meeting->delete();
 
         return response()->json(['message' => 'Meeting deleted.']);
+    }
+
+    /**
+     * Upload the meeting recording (multipart: file, optional language such as ar or en).
+     * The AI service turns it into text in the background; poll GET /meetings/{id}:
+     * status processing -> uploaded (transcript is filled) | failed. Then call summarize.
+     */
+    public function uploadRecording(Request $request, int $id): JsonResponse
+    {
+        $meeting = Meeting::findOrFail($id);
+        abort_if($meeting->status === 'processing', 422, 'This meeting is already being processed.');
+
+        $request->validate([
+            'file' => ['required', 'file', 'max:51200', 'mimes:webm,mp3,wav,m4a,ogg,mp4,aac,flac,weba,mpga,oga'],
+            'language' => ['nullable', 'string', 'in:ar,en,fr,de,es,tr'],
+        ]);
+
+        if ($meeting->recording_path) {
+            Storage::disk('local')->delete($meeting->recording_path);
+        }
+        $file = $request->file('file');
+        $ext = strtolower($file->getClientOriginalExtension() ?: 'webm');
+        $path = Storage::disk('local')->putFileAs("recordings/{$meeting->company_id}", $file, "meeting-{$meeting->id}-" . time() . ".{$ext}");
+
+        $meeting->forceFill(['recording_path' => $path, 'status' => 'processing'])->save();
+        TranscribeMeeting::dispatch($meeting->id, $request->input('language'));
+
+        return response()->json(['meeting_id' => $meeting->id, 'status' => 'processing'], 202);
     }
 
     /**

@@ -134,6 +134,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [MeetingController::class, 'show'])->middleware('permission:clients.view');
         Route::put('/', [MeetingController::class, 'update'])->middleware('permission:agents.run');
         Route::delete('/', [MeetingController::class, 'destroy'])->middleware('permission:tasks.assign');
+        Route::post('/recording', [MeetingController::class, 'uploadRecording'])->middleware('permission:agents.run');
         Route::post('/summarize', [MeetingController::class, 'summarize'])->middleware('permission:agents.run');
         Route::post('/action-items', [MeetingController::class, 'addActionItem'])->middleware('permission:agents.run');
     });
