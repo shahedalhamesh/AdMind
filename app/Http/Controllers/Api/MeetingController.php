@@ -116,6 +116,12 @@ class MeetingController extends Controller
         $team = User::where('company_id', $meeting->company_id)->whereNull('client_id')
             ->where('status', 'active')->orderBy('name')->pluck('name')->implode(', ');
 
+        // items already decided in an earlier run must not be proposed again
+        $decided = MeetingActionItem::where('meeting_id', $meeting->id)->whereIn('status', ['confirmed', 'rejected'])
+            ->pluck('description')->map(fn ($d) => '- ' . $d)->implode("\n");
+        $decidedNote = $decided === '' ? '' :
+            "These action items were already decided. Do NOT include them again, nor any item that means the same thing:\n{$decided}\n";
+
         $message = "You are summarizing a meeting with the client \"{$client->name}\" for a marketing agency.\n"
             . "Write in the same language as the transcript.\n"
             . "Team members (use these exact names for assignees): {$team}\n"
@@ -123,6 +129,7 @@ class MeetingController extends Controller
             . '{"summary": "3 to 6 sentences", "key_insights": ["short point"], '
             . '"action_items": [{"description": "what must be done", "assignee": "exact team member name or null", "due_date": "YYYY-MM-DD or null"}]}' . "\n"
             . "Only include action items that were clearly agreed in the meeting. Do not invent anything.\n"
+            . $decidedNote
             . "Meeting title: {$meeting->title}\nDate: {$meeting->held_at->toDateString()}\n"
             . "Transcript:\n---\n{$meeting->transcript}\n---";
 
