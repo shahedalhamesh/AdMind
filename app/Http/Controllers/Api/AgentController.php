@@ -8,6 +8,7 @@ use App\Models\AgentRun;
 use App\Models\Client;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Services\ContentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -87,6 +88,10 @@ class AgentController extends Controller
         return response()->json([
             'id' => $run->id,
             'status' => $run->status,
+            'mode' => $run->input['mode'] ?? null,
+            'task_id' => $run->task_id,
+            'content_id' => $run->input['content_id'] ?? null,
+            'needs_info' => ContentService::isNoteToEmployee((string) $run->output),
             'conversation_id' => $run->conversation_id,
             'output' => $run->output,
             'verification_status' => $run->verification_status,

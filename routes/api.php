@@ -1,18 +1,187 @@
 <?php
 
+use App\Http\Controllers\Api\AdminCompanyController;
 use App\Http\Controllers\Api\AgentController;
+use App\Http\Controllers\Api\ApprovalController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CampaignController;
 use App\Http\Controllers\Api\ClientController;
+use App\Http\Controllers\Api\ClientRequestController;
+use App\Http\Controllers\Api\ClientDocumentController;
+use App\Http\Controllers\Api\ClientProfileController;
+use App\Http\Controllers\Api\ContentController;
+use App\Http\Controllers\Api\GoalController;
+use App\Http\Controllers\Api\MeetingActionItemController;
+use App\Http\Controllers\Api\MediaController;
+use App\Http\Controllers\Api\MeetingController;
+use App\Http\Controllers\Api\RecommendationController;
+use App\Http\Controllers\Api\MetricController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\PublishController;
+use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\SocialAccountController;
+use App\Http\Controllers\Api\TaskController;
+use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
+Route::post('/login/google', [AuthController::class, 'loginGoogle'])->middleware('throttle:10,1');
+
+// Media files: opened by a signed link (valid 2 hours) so <img>/<video> tags work without a token
+Route::get('/media/{id}/file', [MediaController::class, 'file'])->whereNumber('id')->middleware('signed')->name('media.file');
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
+    // Platform admin: the agencies using AdMind
+    Route::get('/admin/companies', [AdminCompanyController::class, 'index']);
+    Route::put('/admin/companies/{id}', [AdminCompanyController::class, 'update'])->whereNumber('id');
+
+    // Clients
     Route::get('/clients', [ClientController::class, 'index'])->middleware('permission:clients.view');
     Route::post('/clients', [ClientController::class, 'store'])->middleware('permission:clients.create');
+    Route::post('/clients/extract-profile', [ClientProfileController::class, 'extract'])->middleware('permission:clients.update');
+
+    Route::prefix('clients/{id}')->whereNumber('id')->group(function () {
+        Route::get('/', [ClientController::class, 'show'])->middleware('permission:clients.view');
+        Route::put('/', [ClientController::class, 'update'])->middleware('permission:clients.update');
+        Route::delete('/', [ClientController::class, 'destroy'])->middleware('permission:clients.delete');
+
+        Route::get('/profile', [ClientProfileController::class, 'show'])->middleware('permission:clients.view');
+        Route::put('/profile', [ClientProfileController::class, 'update'])->middleware('permission:clients.update');
+
+        Route::get('/documents', [ClientDocumentController::class, 'index'])->middleware('permission:clients.view');
+        Route::post('/documents', [ClientDocumentController::class, 'store'])->middleware('permission:clients.update');
+        Route::delete('/documents/{documentId}', [ClientDocumentController::class, 'destroy'])
+            ->whereNumber('documentId')->middleware('permission:clients.update');
+
+        Route::get('/social-accounts', [SocialAccountController::class, 'index'])->middleware('permission:clients.view');
+        Route::post('/social-accounts', [SocialAccountController::class, 'store'])->middleware('permission:clients.update');
+        Route::delete('/social-accounts/{accountId}', [SocialAccountController::class, 'destroy'])
+            ->whereNumber('accountId')->middleware('permission:clients.update');
+    });
+
+    // Tasks
+    Route::get('/tasks', [TaskController::class, 'index'])->middleware('permission:tasks.view');
+    Route::post('/tasks', [TaskController::class, 'store'])->middleware('permission:tasks.create');
+
+    Route::prefix('tasks/{id}')->whereNumber('id')->group(function () {
+        Route::get('/', [TaskController::class, 'show'])->middleware('permission:tasks.view');
+        Route::put('/', [TaskController::class, 'update'])->middleware('permission:tasks.update');
+        Route::delete('/', [TaskController::class, 'destroy'])->middleware('permission:tasks.delete');
+        Route::post('/run', [TaskController::class, 'run'])->middleware('permission:tasks.assign');
+        Route::post('/dependencies', [TaskController::class, 'addDependency'])->middleware('permission:tasks.assign');
+        Route::delete('/dependencies/{dependsOnId}', [TaskController::class, 'removeDependency'])
+            ->whereNumber('dependsOnId')->middleware('permission:tasks.assign');
+    });
+
+    // Campaigns
+    Route::get('/campaigns', [CampaignController::class, 'index'])->middleware('permission:campaigns.view');
+    Route::post('/campaigns', [CampaignController::class, 'store'])->middleware('permission:campaigns.create');
+
+    Route::prefix('campaigns/{id}')->whereNumber('id')->group(function () {
+        Route::get('/', [CampaignController::class, 'show'])->middleware('permission:campaigns.view');
+        Route::put('/', [CampaignController::class, 'update'])->middleware('permission:campaigns.update');
+        Route::delete('/', [CampaignController::class, 'destroy'])->middleware('permission:campaigns.delete');
+    });
+
+    // Users and roles
+    Route::get('/users', [UserController::class, 'index'])->middleware('permission:users.view');
+    Route::post('/users', [UserController::class, 'store'])->middleware('permission:users.create');
+    Route::get('/users/{id}', [UserController::class, 'show'])->whereNumber('id')->middleware('permission:users.view');
+    Route::put('/users/{id}', [UserController::class, 'update'])->whereNumber('id')->middleware('permission:users.update');
+    Route::get('/roles', [UserController::class, 'roles'])->middleware('permission:users.view');
+    Route::post('/me/password', [UserController::class, 'changePassword']);
+
+    // Content
+    Route::get('/content', [ContentController::class, 'index'])->middleware('permission:content.view');
+    Route::post('/content', [ContentController::class, 'store'])->middleware('permission:content.create');
+
+    Route::prefix('content/{id}')->whereNumber('id')->group(function () {
+        Route::get('/', [ContentController::class, 'show'])->middleware('permission:content.view');
+        Route::put('/', [ContentController::class, 'update'])->middleware('permission:content.update');
+        Route::post('/versions', [ContentController::class, 'addVersion'])->middleware('permission:content.update');
+        Route::post('/submit', [ContentController::class, 'submit'])->middleware('permission:content.update');
+        Route::post('/revise', [ContentController::class, 'revise'])->middleware('permission:content.update');
+        Route::post('/schedule', [PublishController::class, 'schedule'])->middleware('permission:content.update');
+    });
+
+    // Publishing
+    Route::get('/publish-jobs', [PublishController::class, 'index'])->middleware('permission:content.view');
+    Route::prefix('publish-jobs/{id}')->whereNumber('id')->group(function () {
+        Route::put('/', [PublishController::class, 'reschedule'])->middleware('permission:content.update');
+        Route::post('/cancel', [PublishController::class, 'cancel'])->middleware('permission:content.update');
+        Route::post('/mark-published', [PublishController::class, 'markPublished'])->middleware('permission:content.update');
+    });
+
+    // Performance numbers, goals and reports
+    Route::get('/metrics', [MetricController::class, 'index'])->middleware('permission:reports.view');
+    Route::post('/metrics', [MetricController::class, 'store'])->middleware('permission:reports.create');
+
+    Route::get('/goals', [GoalController::class, 'index'])->middleware('permission:reports.view');
+    Route::post('/goals', [GoalController::class, 'store'])->middleware('permission:reports.create');
+    Route::put('/goals/{id}', [GoalController::class, 'update'])->whereNumber('id')->middleware('permission:reports.update');
+    Route::delete('/goals/{id}', [GoalController::class, 'destroy'])->whereNumber('id')->middleware('permission:reports.delete');
+
+    Route::get('/reports', [ReportController::class, 'index'])->middleware('permission:reports.view');
+    Route::post('/reports/generate', [ReportController::class, 'generate'])->middleware('permission:reports.create');
+    Route::prefix('reports/{id}')->whereNumber('id')->group(function () {
+        Route::get('/', [ReportController::class, 'show'])->middleware('permission:reports.view');
+        Route::put('/visibility', [ReportController::class, 'visibility'])->middleware('permission:reports.update');
+        Route::delete('/', [ReportController::class, 'destroy'])->middleware('permission:reports.delete');
+    });
+
+    // Recommendations (the AI reads the numbers and proposes next actions)
+    Route::get('/recommendations', [RecommendationController::class, 'index'])->middleware('permission:clients.view');
+    Route::post('/recommendations/generate', [RecommendationController::class, 'generate'])->middleware('permission:agents.run');
+    Route::post('/recommendations/{id}/accept', [RecommendationController::class, 'accept'])->whereNumber('id')->middleware('permission:tasks.assign');
+    Route::post('/recommendations/{id}/dismiss', [RecommendationController::class, 'dismiss'])->whereNumber('id')->middleware('permission:tasks.assign');
+
+    // Media library and media of content
+    Route::get('/media', [MediaController::class, 'index'])->middleware('permission:content.view');
+    Route::post('/media', [MediaController::class, 'store'])->middleware('permission:content.create');
+    Route::post('/media/generate', [MediaController::class, 'generate'])->middleware('permission:content.create');
+    Route::get('/media/{id}', [MediaController::class, 'show'])->whereNumber('id')->middleware('permission:content.view');
+    Route::delete('/media/{id}', [MediaController::class, 'destroy'])->whereNumber('id')->middleware('permission:content.update');
+    Route::get('/content/{id}/media', [MediaController::class, 'forContent'])->whereNumber('id')->middleware('permission:content.view');
+    Route::post('/content/{id}/media', [MediaController::class, 'attach'])->whereNumber('id')->middleware('permission:content.update');
+    Route::delete('/content/{id}/media/{mediaId}', [MediaController::class, 'detach'])->whereNumber(['id', 'mediaId'])->middleware('permission:content.update');
+
+    // Requests sent by a client from its portal
+    Route::get('/client-requests', [ClientRequestController::class, 'index']);
+    Route::post('/client-requests', [ClientRequestController::class, 'store'])->middleware('permission:requests.create');
+    Route::get('/client-requests/{id}', [ClientRequestController::class, 'show'])->whereNumber('id');
+    Route::post('/client-requests/{id}/convert', [ClientRequestController::class, 'convert'])->whereNumber('id')->middleware('permission:tasks.assign');
+    Route::post('/client-requests/{id}/reject', [ClientRequestController::class, 'reject'])->whereNumber('id')->middleware('permission:tasks.assign');
+
+    // Meetings
+    Route::get('/meetings', [MeetingController::class, 'index'])->middleware('permission:clients.view');
+    Route::post('/meetings', [MeetingController::class, 'store'])->middleware('permission:agents.run');
+    Route::prefix('meetings/{id}')->whereNumber('id')->group(function () {
+        Route::get('/', [MeetingController::class, 'show'])->middleware('permission:clients.view');
+        Route::put('/', [MeetingController::class, 'update'])->middleware('permission:agents.run');
+        Route::delete('/', [MeetingController::class, 'destroy'])->middleware('permission:tasks.assign');
+        Route::post('/recording', [MeetingController::class, 'uploadRecording'])->middleware('permission:agents.run');
+        Route::post('/summarize', [MeetingController::class, 'summarize'])->middleware('permission:agents.run');
+        Route::post('/action-items', [MeetingController::class, 'addActionItem'])->middleware('permission:agents.run');
+    });
+    Route::prefix('meeting-action-items/{id}')->whereNumber('id')->group(function () {
+        Route::put('/', [MeetingActionItemController::class, 'update'])->middleware('permission:agents.run');
+        Route::post('/confirm', [MeetingActionItemController::class, 'confirm'])->middleware('permission:tasks.assign');
+        Route::post('/reject', [MeetingActionItemController::class, 'reject'])->middleware('permission:tasks.assign');
+    });
+
+    // Approvals
+    Route::get('/approvals', [ApprovalController::class, 'index'])->middleware('permission:approvals.respond');
+    Route::post('/approvals/{id}/decision', [ApprovalController::class, 'decide'])
+        ->whereNumber('id')->middleware('permission:approvals.respond');
+
+    // Notifications (own)
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'readAll']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'read'])->whereNumber('id');
 
     // AI agents
     Route::middleware('permission:agents.run')->prefix('agent')->group(function () {
