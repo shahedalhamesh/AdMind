@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\ClientProfileController;
 use App\Http\Controllers\Api\ContentController;
 use App\Http\Controllers\Api\GoalController;
 use App\Http\Controllers\Api\MeetingActionItemController;
+use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\MeetingController;
 use App\Http\Controllers\Api\RecommendationController;
@@ -21,11 +22,18 @@ use App\Http\Controllers\Api\PublishController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SocialAccountController;
 use App\Http\Controllers\Api\TaskController;
+use App\Http\Controllers\Api\TeamJoinController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
+// Invitation links (public): the invited person previews and accepts
+Route::get('/join/{token}', [InvitationController::class, 'preview'])->middleware('throttle:30,1');
+Route::post('/join/{token}', [InvitationController::class, 'accept'])->middleware('throttle:10,1');
+// Public team join link (one role): the person asks to join, an Owner approves
+Route::get('/team-join/{token}', [TeamJoinController::class, 'preview'])->middleware('throttle:30,1');
+Route::post('/team-join/{token}', [TeamJoinController::class, 'submit'])->middleware('throttle:5,1');
 Route::post('/login/google', [AuthController::class, 'loginGoogle'])->middleware('throttle:10,1');
 
 // Media files: opened by a signed link (valid 2 hours) so <img>/<video> tags work without a token
@@ -38,6 +46,20 @@ Route::middleware('auth:sanctum')->group(function () {
     // Platform admin: the agencies using AdMind
     Route::get('/admin/companies', [AdminCompanyController::class, 'index']);
     Route::put('/admin/companies/{id}', [AdminCompanyController::class, 'update'])->whereNumber('id');
+
+    // Invitations (the team invites a person by email and role)
+    Route::get('/invitations', [InvitationController::class, 'index'])->middleware('permission:users.view');
+    Route::post('/invitations', [InvitationController::class, 'store'])->middleware('permission:users.create');
+    Route::post('/invitations/{id}/renew', [InvitationController::class, 'renew'])->whereNumber('id')->middleware('permission:users.create');
+    Route::delete('/invitations/{id}', [InvitationController::class, 'revoke'])->whereNumber('id')->middleware('permission:users.create');
+
+    // Public join links and the requests they create
+    Route::get('/join-links', [TeamJoinController::class, 'links'])->middleware('permission:users.view');
+    Route::post('/join-links', [TeamJoinController::class, 'createLink'])->middleware('permission:users.create');
+    Route::delete('/join-links/{id}', [TeamJoinController::class, 'revokeLink'])->whereNumber('id')->middleware('permission:users.create');
+    Route::get('/join-requests', [TeamJoinController::class, 'requests'])->middleware('permission:users.view');
+    Route::post('/join-requests/{id}/approve', [TeamJoinController::class, 'approve'])->whereNumber('id')->middleware('permission:users.create');
+    Route::post('/join-requests/{id}/reject', [TeamJoinController::class, 'reject'])->whereNumber('id')->middleware('permission:users.create');
 
     // Clients
     Route::get('/clients', [ClientController::class, 'index'])->middleware('permission:clients.view');
