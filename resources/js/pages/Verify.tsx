@@ -92,7 +92,8 @@ export default function Verify() {
       markEmailVerified(pending.email);
       saveUser(pending);
       clearPendingUser();
-      navigate("/dashboard", { replace: true });
+      // After verification the company always sees the onboarding questions first.
+      navigate("/onboarding", { replace: true });
     } else {
       setError("That code is not correct. Please try again.");
       setDigits(Array(LENGTH).fill(""));
