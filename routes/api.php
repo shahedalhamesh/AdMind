@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\ClientProfileController;
 use App\Http\Controllers\Api\ContentController;
 use App\Http\Controllers\Api\GoalController;
 use App\Http\Controllers\Api\MeetingActionItemController;
+use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\MeetingController;
 use App\Http\Controllers\Api\RecommendationController;
 use App\Http\Controllers\Api\MetricController;
@@ -25,6 +26,9 @@ use Illuminate\Support\Facades\Route;
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
 Route::post('/login/google', [AuthController::class, 'loginGoogle'])->middleware('throttle:10,1');
+
+// Media files: opened by a signed link (valid 2 hours) so <img>/<video> tags work without a token
+Route::get('/media/{id}/file', [MediaController::class, 'file'])->whereNumber('id')->middleware('signed')->name('media.file');
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
@@ -134,6 +138,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/recommendations/{id}/accept', [RecommendationController::class, 'accept'])->whereNumber('id')->middleware('permission:tasks.assign');
     Route::post('/recommendations/{id}/dismiss', [RecommendationController::class, 'dismiss'])->whereNumber('id')->middleware('permission:tasks.assign');
 
+    // Media library and media of content
+    Route::get('/media', [MediaController::class, 'index'])->middleware('permission:content.view');
+    Route::post('/media', [MediaController::class, 'store'])->middleware('permission:content.create');
+    Route::get('/media/{id}', [MediaController::class, 'show'])->whereNumber('id')->middleware('permission:content.view');
+    Route::delete('/media/{id}', [MediaController::class, 'destroy'])->whereNumber('id')->middleware('permission:content.update');
+    Route::get('/content/{id}/media', [MediaController::class, 'forContent'])->whereNumber('id')->middleware('permission:content.view');
+    Route::post('/content/{id}/media', [MediaController::class, 'attach'])->whereNumber('id')->middleware('permission:content.update');
+    Route::delete('/content/{id}/media/{mediaId}', [MediaController::class, 'detach'])->whereNumber(['id', 'mediaId'])->middleware('permission:content.update');
+
     // Meetings
     Route::get('/meetings', [MeetingController::class, 'index'])->middleware('permission:clients.view');
     Route::post('/meetings', [MeetingController::class, 'store'])->middleware('permission:agents.run');
@@ -141,6 +154,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [MeetingController::class, 'show'])->middleware('permission:clients.view');
         Route::put('/', [MeetingController::class, 'update'])->middleware('permission:agents.run');
         Route::delete('/', [MeetingController::class, 'destroy'])->middleware('permission:tasks.assign');
+        Route::post('/recording', [MeetingController::class, 'uploadRecording'])->middleware('permission:agents.run');
         Route::post('/summarize', [MeetingController::class, 'summarize'])->middleware('permission:agents.run');
         Route::post('/action-items', [MeetingController::class, 'addActionItem'])->middleware('permission:agents.run');
     });
