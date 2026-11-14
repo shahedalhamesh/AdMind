@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\ApprovalController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CampaignController;
 use App\Http\Controllers\Api\ClientController;
+use App\Http\Controllers\Api\ClientRequestController;
 use App\Http\Controllers\Api\ClientDocumentController;
 use App\Http\Controllers\Api\ClientProfileController;
 use App\Http\Controllers\Api\ContentController;
@@ -147,6 +148,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/content/{id}/media', [MediaController::class, 'forContent'])->whereNumber('id')->middleware('permission:content.view');
     Route::post('/content/{id}/media', [MediaController::class, 'attach'])->whereNumber('id')->middleware('permission:content.update');
     Route::delete('/content/{id}/media/{mediaId}', [MediaController::class, 'detach'])->whereNumber(['id', 'mediaId'])->middleware('permission:content.update');
+
+    // Requests sent by a client from its portal
+    Route::get('/client-requests', [ClientRequestController::class, 'index']);
+    Route::post('/client-requests', [ClientRequestController::class, 'store'])->middleware('permission:requests.create');
+    Route::get('/client-requests/{id}', [ClientRequestController::class, 'show'])->whereNumber('id');
+    Route::post('/client-requests/{id}/convert', [ClientRequestController::class, 'convert'])->whereNumber('id')->middleware('permission:tasks.assign');
+    Route::post('/client-requests/{id}/reject', [ClientRequestController::class, 'reject'])->whereNumber('id')->middleware('permission:tasks.assign');
 
     // Meetings
     Route::get('/meetings', [MeetingController::class, 'index'])->middleware('permission:clients.view');
