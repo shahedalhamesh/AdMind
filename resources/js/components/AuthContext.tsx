@@ -70,12 +70,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, []);
 
-  const signOut = useCallback(async () => {
-    try {
-      await api("/logout", { method: "POST" });
-    } catch {
-      /* even if the server cannot be reached, sign out locally */
-    }
+   const signOut = useCallback(async () => {
+    // Tell the server in the background (api() reads the token right now, before we clear it),
+    // but do not make the person wait for it: sign out locally at once.
+    api("/logout", { method: "POST" }).catch(() => {
+      /* even if the server cannot be reached, the local sign-out below is enough */
+    });
     clearUser();
     setUser(null);
   }, []);

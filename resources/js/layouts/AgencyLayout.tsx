@@ -1,6 +1,8 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { clearUser, getUser } from "../services/auth";
+import { can } from "../services/auth";
+import { useAuth } from "../components/AuthContext";
 import { usePortalTheme } from "../services/portalTheme";
+import LangToggle from "../components/LangToggle";
 
 const ICONS: Record<string, React.ReactNode> = {
   home: <><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M9 22V12h6v10" /></>,
@@ -15,24 +17,29 @@ const ICONS: Record<string, React.ReactNode> = {
 };
 
 // Flip `built` to true (and add the route in app.tsx) when each page exists.
-const MAIN = [
+// `perm` decides who sees the item (checked with can(), never with the role name).
+type NavItem = { to: string; label: string; icon: string; built: boolean; perm?: string };
+
+const MAIN: NavItem[] = [
   { to: "/dashboard", label: "Home", icon: "home", built: true },
-  { to: "/clients", label: "Clients", icon: "users", built: false },
-  { to: "/team", label: "Team", icon: "team", built: true },
-  { to: "/assistant", label: "AI Assistant", icon: "ai", built: false },
-  { to: "/content", label: "Content", icon: "content", built: false },
-  { to: "/approvals", label: "Approvals", icon: "ok", built: false },
+  { to: "/clients", label: "Clients", icon: "users", built: true, perm: "clients.view" },
+  { to: "/team", label: "Team", icon: "team", built: true, perm: "users.view" },
+  { to: "/assistant", label: "AI Assistant", icon: "ai", built: true, perm: "agents.run" },
+  { to: "/content", label: "Content", icon: "content", built: true, perm: "content.view" },
+  { to: "/approvals", label: "Approvals", icon: "ok", built: true, perm: "approvals.respond" },
 ];
-const SOON = [
-  { to: "/tasks", label: "Tasks", icon: "task", built: false },
-  { to: "/campaigns", label: "Campaigns", icon: "mega", built: false },
-  { to: "/reports", label: "Reports", icon: "chart", built: false },
+const SOON: NavItem[] = [
+  { to: "/tasks", label: "Tasks", icon: "task", built: true, perm: "tasks.view" },
+  { to: "/campaigns", label: "Campaigns", icon: "mega", built: true, perm: "campaigns.view" },
+  { to: "/reports", label: "Reports", icon: "chart", built: true, perm: "reports.view" },
+  { to: "/meetings", label: "Meetings", icon: "content", built: true, perm: "clients.view" },
+  { to: "/recommendations", label: "Recommendations", icon: "ok", built: true, perm: "clients.view" },
 ];
 
 export default function AgencyLayout() {
   const { dark, toggle, p } = usePortalTheme();
   const navigate = useNavigate();
-  const user = getUser();
+  const { user, signOut } = useAuth();
 
   let agency = "Your agency";
   try {
@@ -42,23 +49,28 @@ export default function AgencyLayout() {
 
   const initials = (user?.name ?? "U").split(" ").map((s) => s[0]).slice(0, 2).join("").toUpperCase();
 
-  const logout = () => {
-    clearUser();
+  const logout = async () => {
+    await signOut();
     navigate("/login", { replace: true });
   };
+
+  // Show only what this person is allowed to use.
+  const visible = (it: NavItem) => !it.perm || can(user, it.perm);
+  const mainItems = MAIN.filter(visible);
+  const soonItems = SOON.filter(visible);
 
   const Svg = ({ name, size = 19 }: { name: string; size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{ICONS[name]}</svg>
   );
 
-  const renderItem = (it: { to: string; label: string; icon: string; built: boolean }) => {
+  const renderItem = (it: NavItem) => {
     const base: React.CSSProperties = { display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 10, fontSize: 14, textDecoration: "none" };
     if (!it.built) {
       return (
         <div key={it.to} aria-disabled title="Coming soon"
           style={{ ...base, color: p.muted, opacity: 0.6, cursor: "default", fontWeight: 500 }}>
           <Svg name={it.icon} />{it.label}
-          <span style={{ marginLeft: "auto", fontSize: 10, letterSpacing: ".08em", textTransform: "uppercase" }}>Soon</span>
+          <span style={{ marginInlineStart: "auto", fontSize: 10, letterSpacing: ".08em", textTransform: "uppercase" }}>Soon</span>
         </div>
       );
     }
@@ -81,7 +93,7 @@ export default function AgencyLayout() {
       `}</style>
 
       {/* Sidebar */}
-      <aside className="pl-side" style={{ background: p.side, borderRight: `1px solid ${p.border}`, padding: "22px 16px", display: "flex", flexDirection: "column", boxSizing: "border-box", position: "sticky", top: 0, height: "100vh" }}>
+      <aside className="pl-side" style={{ background: p.side, borderInlineEnd: `1px solid ${p.border}`, padding: "22px 16px", display: "flex", flexDirection: "column", boxSizing: "border-box", position: "sticky", top: 0, height: "100vh" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 8px 22px" }}>
           <div style={{ width: 42, height: 42, borderRadius: 12, background: p.logoBg, boxShadow: "0 0 0 3px #A64B35", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={p.logoIc} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" /><path d="M9 13a4.5 4.5 0 0 0 3-4" /><path d="M12 13h4" /><path d="M12 8h8" /></svg>
@@ -89,12 +101,19 @@ export default function AgencyLayout() {
           <div style={{ fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 600, letterSpacing: ".14em" }}>ADMIND</div>
         </div>
 
-        <div style={eyebrow}>WORKSPACE</div>
-        <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>{MAIN.map(renderItem)}</nav>
-        <div style={{ ...eyebrow, paddingTop: 22 }}>COMING SOON</div>
-        <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>{SOON.map(renderItem)}</nav>
+        {/* The menu scrolls on small screens; the profile card and Log out stay visible below it. */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 12 }}>
+          <div style={eyebrow}>WORKSPACE</div>
+          <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>{mainItems.map(renderItem)}</nav>
+          {soonItems.length > 0 && (
+            <>
+              <div style={{ ...eyebrow, paddingTop: 22 }}>COMING SOON</div>
+              <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>{soonItems.map(renderItem)}</nav>
+            </>
+          )}
+        </div>
 
-        <div style={{ marginTop: "auto", padding: 14, borderRadius: 14, border: `1px solid ${p.border}`, background: p.card }}>
+        <div style={{ flexShrink: 0, padding: 14, borderRadius: 14, border: `1px solid ${p.border}`, background: p.card }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ width: 40, height: 40, borderRadius: "50%", background: "linear-gradient(135deg,#C75B41,#A64B35)", color: "#fff", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initials}</div>
             <div style={{ minWidth: 0 }}>
@@ -115,7 +134,8 @@ export default function AgencyLayout() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
             <input className="pl-in" placeholder="Search clients, content, requests" style={{ flex: 1, minWidth: 0, border: 0, outline: 0, background: "transparent", color: p.text, fontSize: 14, fontFamily: "inherit" }} />
           </label>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+            <LangToggle />
             <button type="button" onClick={toggle} aria-label="Toggle theme"
               style={{ width: 42, height: 42, borderRadius: 10, border: `1px solid ${p.border}`, background: p.card, color: p.text, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
               {dark
