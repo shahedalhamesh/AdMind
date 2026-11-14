@@ -7,6 +7,7 @@ use App\Models\Client;
 use App\Models\ContentItem;
 use App\Models\Meeting;
 use App\Models\MeetingActionItem;
+use App\Models\Recommendation;
 use App\Models\Message;
 use App\Models\User;
 use App\Models\Task;
@@ -89,6 +90,8 @@ class RunAgentRequest implements ShouldQueue
             $this->afterRevision($run);
         } elseif ($mode === 'meeting') {
             $this->afterMeeting($run);
+        } elseif ($mode === 'recommend') {
+            $this->afterRecommend($run);
         }
     }
 
@@ -227,6 +230,46 @@ class RunAgentRequest implements ShouldQueue
             "Meeting summary ready: {$meeting->title}", null, ['meeting_id' => $meeting->id, 'agent_run_id' => $run->id]);
     }
 
+    /** The AI analysed the numbers: replace the open recommendations with the new ones. */
+    private function afterRecommend(AgentRun $run): void
+    {
+        $parsed = $this->parseJson((string) $run->output);
+        $items = collect((array) ($parsed['recommendations'] ?? []))
+            ->filter(fn ($r) => is_array($r) && filled($r['recommendation'] ?? null))->take(8)->values();
+
+        if ($items->isEmpty()) {
+            $run->forceFill(['status' => 'failed', 'error' => 'The answer was not in the expected format. Try again.'])->save();
+            ContentService::notify($run->company_id, ContentService::managerIds($run->company_id), 'failure',
+                'The AI could not write recommendations', 'The answer was not in the expected format. Try again.',
+                ['client_id' => $run->client_id, 'agent_run_id' => $run->id]);
+
+            return;
+        }
+
+        DB::transaction(function () use ($run, $items) {
+            Recommendation::where('client_id', $run->client_id)->where('status', 'new')->delete();
+            foreach ($items as $r) {
+                Recommendation::forceCreate([
+                    'company_id' => $run->company_id,
+                    'client_id' => $run->client_id,
+                    'recommendation' => (string) $r['recommendation'],
+                    'based_on' => [
+                        'title' => mb_substr((string) ($r['title'] ?? ''), 0, 255),
+                        'reason' => (string) ($r['reason'] ?? ''),
+                        'priority' => in_array($r['priority'] ?? null, ['low', 'medium', 'high'], true) ? $r['priority'] : 'medium',
+                        'period' => $run->input['period'] ?? null,
+                        'agent_run_id' => $run->id,
+                    ],
+                    'status' => 'new',
+                ]);
+            }
+        });
+
+        ContentService::notify($run->company_id, ContentService::managerIds($run->company_id), 'recommendations_ready',
+            'New AI recommendations are ready', Client::find($run->client_id)?->name,
+            ['client_id' => $run->client_id, 'agent_run_id' => $run->id]);
+    }
+
     /** The AI should answer with JSON only, but may wrap it in a code fence or add a sentence. */
     private function parseJson(string $text): ?array
     {
@@ -255,6 +298,13 @@ class RunAgentRequest implements ShouldQueue
             ContentService::notify($run->company_id, ContentService::managerIds($run->company_id), 'failure',
                 'The AI could not summarize the meeting', mb_substr($e->getMessage(), 0, 300),
                 ['meeting_id' => $run->input['meeting_id'] ?? null, 'agent_run_id' => $run->id]);
+
+            return;
+        }
+        if ($mode === 'recommend') {
+            ContentService::notify($run->company_id, ContentService::managerIds($run->company_id), 'failure',
+                'The AI could not write recommendations', mb_substr($e->getMessage(), 0, 300),
+                ['client_id' => $run->client_id, 'agent_run_id' => $run->id]);
 
             return;
         }

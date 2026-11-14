@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\ContentController;
 use App\Http\Controllers\Api\GoalController;
 use App\Http\Controllers\Api\MeetingActionItemController;
 use App\Http\Controllers\Api\MeetingController;
+use App\Http\Controllers\Api\RecommendationController;
 use App\Http\Controllers\Api\MetricController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PublishController;
@@ -127,6 +128,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/', [ReportController::class, 'destroy'])->middleware('permission:reports.delete');
     });
 
+    // Recommendations (the AI reads the numbers and proposes next actions)
+    Route::get('/recommendations', [RecommendationController::class, 'index'])->middleware('permission:clients.view');
+    Route::post('/recommendations/generate', [RecommendationController::class, 'generate'])->middleware('permission:agents.run');
+    Route::post('/recommendations/{id}/accept', [RecommendationController::class, 'accept'])->whereNumber('id')->middleware('permission:tasks.assign');
+    Route::post('/recommendations/{id}/dismiss', [RecommendationController::class, 'dismiss'])->whereNumber('id')->middleware('permission:tasks.assign');
+
     // Meetings
     Route::get('/meetings', [MeetingController::class, 'index'])->middleware('permission:clients.view');
     Route::post('/meetings', [MeetingController::class, 'store'])->middleware('permission:agents.run');
@@ -134,7 +141,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [MeetingController::class, 'show'])->middleware('permission:clients.view');
         Route::put('/', [MeetingController::class, 'update'])->middleware('permission:agents.run');
         Route::delete('/', [MeetingController::class, 'destroy'])->middleware('permission:tasks.assign');
-        Route::post('/recording', [MeetingController::class, 'uploadRecording'])->middleware('permission:agents.run');
         Route::post('/summarize', [MeetingController::class, 'summarize'])->middleware('permission:agents.run');
         Route::post('/action-items', [MeetingController::class, 'addActionItem'])->middleware('permission:agents.run');
     });
