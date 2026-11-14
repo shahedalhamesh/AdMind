@@ -141,6 +141,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Media library and media of content
     Route::get('/media', [MediaController::class, 'index'])->middleware('permission:content.view');
     Route::post('/media', [MediaController::class, 'store'])->middleware('permission:content.create');
+    Route::post('/media/generate', [MediaController::class, 'generate'])->middleware('permission:content.create');
     Route::get('/media/{id}', [MediaController::class, 'show'])->whereNumber('id')->middleware('permission:content.view');
     Route::delete('/media/{id}', [MediaController::class, 'destroy'])->whereNumber('id')->middleware('permission:content.update');
     Route::get('/content/{id}/media', [MediaController::class, 'forContent'])->whereNumber('id')->middleware('permission:content.view');

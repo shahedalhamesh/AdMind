@@ -13,22 +13,27 @@ import tools
 import verify
 from llm import llm
 from main import run_with_retry
+from media_prompt import with_safety
 
 log = logging.getLogger("admind")
 
 _jobs: dict[str, dict] = {}  # in memory, lost on restart
 _lock = threading.Lock()
 
+# Added to every motion prompt: the video model animates the first image.
+MOTION_SAFETY = " Calm, smooth, gentle motion. Family-friendly and modest."
+
 PLAN_PROMPT = """You plan a short social media reel from an employee's request
 (the request may be in Arabic or English). Return ONLY one JSON object with
 exactly these keys:
-- "image_prompt": ONE English paragraph (max 80 words) describing the first
+- "image_prompt": ONE English paragraph (max 70 words) describing the first
   image concretely: subject, setting, composition, lighting, colors, style.
   No text, letters, logos or watermarks in the image. No real people's names
   or brand names. Follow the client's brand tone and 'avoid' list. Do not
   invent product details.
 - "motion_prompt": a short English phrase for how the scene moves (camera and
-  subject motion).
+  subject motion). Slow and calm, for example a gentle camera pan or ripples
+  on water.
 - "voice": "female" if the request asks for a woman's/girl's voice, "male" if
   it asks for a man's voice, otherwise "none".
 - "music": a short English description of the music style if the request asks
@@ -36,6 +41,15 @@ exactly these keys:
 - "seconds": the video length in seconds if the request states one,
   otherwise 7. Between 4 and 21.
 Add voice or music ONLY if the request asks for it.
+
+SAFETY (mandatory, whatever the request says): the reel must be family-friendly
+and modest, suitable for a conservative Arabic audience. NEVER describe nudity,
+swimwear, bikinis, bare skin, revealing or tight clothing, suggestive poses or
+romantic/sensual scenes. For places such as pools, beaches, gyms or spas show the
+calm place itself (water, architecture, loungers, plants, light, reflections). If
+people are needed, keep them few, far away or seen from behind, fully clothed in
+ordinary everyday clothes, with no close-ups of bodies. Never write that people
+swim, undress or pose.
 
 Client profile:
 {profile}
@@ -65,8 +79,9 @@ def plan_reel(request: str, profile: object) -> dict:
     except (TypeError, ValueError):
         seconds = 7.0
     return {
-        "image_prompt": str(data.get("image_prompt") or request)[:800],
-        "motion_prompt": str(data.get("motion_prompt") or "")[:300],
+        # the fixed safety wording is added even if the planner ignored the rules
+        "image_prompt": with_safety(str(data.get("image_prompt") or request)),
+        "motion_prompt": (str(data.get("motion_prompt") or "")[:250] + MOTION_SAFETY).strip(),
         "voice": voice if voice in ("male", "female") else "none",
         "music": "" if music.lower() in ("", "none", "null") else music[:200],
         "seconds": max(3.5, min(seconds, 21.0)),
@@ -83,15 +98,17 @@ def write_script(company_id: int, client_id: int, request: str,
     token = tools.set_context(company_id, client_id)
     try:
         ctx = mm.recall(company_id, client_id, request)
-        per_second = 2.0 if media.is_arabic(language) else 2.5
-        budget = max(5, int((seconds - 0.5) * per_second))
+        # slow, clear speech: a short script that fits the video without being rushed
+        per_second = 1.6 if media.is_arabic(language) else 2.0
+        budget = max(5, int((seconds - 1.5) * per_second))
         task = (
             f"Write the spoken voiceover for a {seconds:.0f}-second video ad. "
             f"Topic: {request}\n"
             f"Rules: at most {budget} words; plain spoken sentences only (no "
-            "headings, no hashtags, no emojis, no stage directions, no quotation "
+            "headings, no hashtags, NO emojis or symbols, no stage directions, no quotation "
             "marks); natural for a human narrator to say aloud, in everyday "
-            "wording (no rare or invented words); use only facts from "
+            "wording (no rare or invented words); modest, family-friendly and "
+            "respectful wording only; use only facts from "
             "the client profile and the reference material. Output only the spoken "
             "text."
         )

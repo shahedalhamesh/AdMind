@@ -95,6 +95,37 @@ class AiService
         $this->send('DELETE', '/knowledge/' . rawurlencode($docId) . '?' . http_build_query(['company_id' => $companyId]), [], null, [404]);
     }
 
+    // -------------------------------------------------------------- media
+
+    /** Generate one image (a few seconds up to a minute). Returns ['file' => name, 'image_prompt' => ...]. */
+    public function generateImage(int $companyId, int $clientId, string $request, string $aspectRatio): array
+    {
+        return $this->send('POST', '/media/image', [
+            'company_id' => $companyId, 'client_id' => $clientId, 'request' => $request, 'aspect_ratio' => $aspectRatio,
+        ], null, [], null, 300)->json();
+    }
+
+    /** Start building a reel. Returns ['job_id' => ..., 'status' => 'running']. */
+    public function startReel(int $companyId, int $clientId, string $request, string $language, string $aspectRatio): array
+    {
+        return $this->send('POST', '/media/reel', [
+            'company_id' => $companyId, 'client_id' => $clientId, 'request' => $request,
+            'language' => $language, 'aspect_ratio' => $aspectRatio,
+        ])->json();
+    }
+
+    /** Reel progress: status running|done|failed, step, file, script, plan, warnings, error. */
+    public function reelStatus(int $companyId, string $jobId): array
+    {
+        return $this->send('GET', '/media/reel/' . rawurlencode($jobId), ['company_id' => $companyId])->json();
+    }
+
+    /** The bytes of a generated file. */
+    public function downloadMedia(string $name): string
+    {
+        return $this->send('GET', '/media/file/' . rawurlencode($name), [], null, [], null, 300)->body();
+    }
+
     // ------------------------------------------------------- transcription
 
     /** Speech to text. Returns ['text' => ..., 'language' => ..., 'duration' => ...]. Slow: run it in a queue job. */
@@ -127,6 +158,7 @@ class AiService
             }
 
             $response = match ($method) {
+                'GET' => $http->get($path, $payload),
                 'POST' => $http->post($path, $payload),
                 'PUT' => $http->put($path, $payload),
                 'DELETE' => $http->delete($path),

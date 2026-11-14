@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\GenerateMedia;
 use App\Models\Client;
 use App\Models\ContentItem;
 use App\Models\MediaAsset;
@@ -93,10 +94,57 @@ class MediaController extends Controller
         return response()->json($this->present($media), 201);
     }
 
+    /**
+     * Ask the AI to create an image or a reel. Body: client_id, kind (image|reel), request (the employee's own
+     * words, any language), aspect_ratio (default 1:1 for images, 9:16 for reels), language (reel voiceover,
+     * default Arabic), content_id (optional: attach it when ready).
+     * Returns 202 + the media item (status processing). Poll GET /media/{id} until ready or failed.
+     * The AI service builds one thing at a time, so a second request is refused while one is running.
+     */
+    public function generate(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'client_id' => ['required', 'integer'],
+            'kind' => ['required', 'in:image,reel'],
+            'request' => ['required', 'string', 'min:3', 'max:2000'],
+            'aspect_ratio' => ['nullable', 'in:1:1,16:9,9:16,4:3,3:4'],
+            'language' => ['nullable', 'in:Arabic,English'],
+            'content_id' => ['nullable', 'integer'],
+        ]);
+        $client = Client::findOrFail($data['client_id']);
+        if (! empty($data['content_id'])) {
+            ContentItem::where('client_id', $client->id)->findOrFail($data['content_id']);
+        }
+
+        $busy = MediaAsset::withoutGlobalScopes()->where('source', 'ai_generated')->where('status', 'processing')
+            ->where('updated_at', '>', now()->subMinutes(20))->exists();
+        abort_if($busy, 429, 'The AI is already creating a file. Try again in a few minutes.');
+
+        $aspect = $data['aspect_ratio'] ?? ($data['kind'] === 'reel' ? '9:16' : '1:1');
+        $media = MediaAsset::forceCreate([
+            'company_id' => $client->company_id,
+            'client_id' => $client->id,
+            'type' => $data['kind'] === 'reel' ? 'video' : 'image',
+            'path' => null,
+            'source' => 'ai_generated',
+            'generator' => 'ai-service',
+            'provider' => 'ai-service',
+            'prompt' => $data['request'],
+            'aspect_ratio' => $aspect,
+            'status' => 'processing',
+            'metadata' => ['kind' => $data['kind'], 'step' => 'queued', 'requested_by' => $request->user()->id],
+        ]);
+
+        GenerateMedia::dispatch($media->id, $data['kind'], $data['language'] ?? 'Arabic', $data['content_id'] ?? null);
+
+        return response()->json($this->present($media), 202);
+    }
+
     /** Delete the file and remove it from every content item. */
     public function destroy(int $id): JsonResponse
     {
         $media = MediaAsset::findOrFail($id);
+        abort_if($media->status === 'processing', 422, 'The AI is still creating this file.');
         $used = $media->contentItems()->whereIn('status', ['scheduled', 'published'])->exists();
         abort_if($used, 422, 'This file is used by scheduled or published content.');
 

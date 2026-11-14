@@ -45,6 +45,10 @@ MIN_IMAGE_BYTES = 20 * 1024  # smaller than this = not a real image
 SEGMENT_SECONDS = 3.5  # the most one Wan call gives us
 MAX_SEGMENTS = 6  # safety cap so one request can't burn all the GPU quota
 
+# Speaking speed of the voiceover (edge-tts "rate"): a little slower is clearer.
+VOICE_RATE_EN = os.getenv("VOICE_RATE_EN", "-8%")
+VOICE_RATE_AR = os.getenv("VOICE_RATE_AR", "-6%")
+
 VOICES = {
     ("arabic", "female"): "ar-SA-ZariyahNeural",
     ("arabic", "male"): "ar-SA-HamedNeural",
@@ -318,15 +322,36 @@ def default_voice(language: str, gender: str = "female") -> str:
     return VOICES[(lang, "male" if gender == "male" else "female")]
 
 
-def speak(text: str, voice: str) -> Path:
+_EMOJI = re.compile(
+    "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U00002300-\U000023FF"
+    "\U0000FE00-\U0000FE0F\U0000200D\U00002B00-\U00002BFF]+"
+)
+
+
+def clean_for_speech(text: str) -> str:
+    """Make a script easy for a voice to read: no emojis, hashtags, links or markdown."""
+    text = re.sub(r"https?://\S+", " ", text or "")
+    text = _EMOJI.sub(" ", text)
+    text = re.sub(r"#\w+", " ", text)
+    text = re.sub(r"[*_`~>|\[\]{}<]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if text and text[-1] not in ".!?؟…":
+        text += "."
+    return text
+
+
+def speak(text: str, voice: str, rate: str = "+0%") -> Path:
     """Text -> speech mp3 with edge-tts (free, needs internet)."""
     import edge_tts
 
+    text = clean_for_speech(text)
+    if not text:
+        raise RuntimeError("The voiceover text is empty after cleaning")
     OUT_DIR.mkdir(exist_ok=True)
     dest = OUT_DIR / f"{uuid.uuid4().hex}.mp3"
 
     async def _go():
-        await edge_tts.Communicate(text, voice).save(str(dest))
+        await edge_tts.Communicate(text, voice, rate=rate).save(str(dest))
 
     asyncio.run(_go())
     if not dest.is_file() or dest.stat().st_size < 1000:
@@ -345,8 +370,10 @@ def add_audio(
 ) -> tuple[Path, dict]:
     """Mix a spoken voiceover and/or background music into a video.
 
-    The output is exactly as long as the video. Music loops and fades out.
-    Returns (new mp4 path, info dict with durations and an optional warning).
+    The voiceover is never cut: when it is longer than the video, the last frame is
+    held for the missing time. Music loops and fades out. The voice is cleaned
+    (high-pass, light compression) and the final mix is loudness-normalised so
+    it is clear on a phone. Returns (new mp4 path, info dict).
     """
     voice_text = (voice_text or "").strip()
     if not voice_text and not music_path:
@@ -355,30 +382,36 @@ def add_audio(
     total = media_duration(video)
     info: dict = {"video_seconds": round(total, 1)}
 
-    inputs = ["-i", str(video)]
-    filters: list[str] = []
-    labels: list[str] = []
     voice_file: Path | None = None
-    idx = 1
     try:
+        extra = 0.0
         if voice_text:
-            voice_file = speak(voice_text, voice or default_voice(language, gender))
+            rate = VOICE_RATE_AR if is_arabic(language) else VOICE_RATE_EN
+            voice_file = speak(voice_text, voice or default_voice(language, gender), rate)
             vdur = media_duration(voice_file)
             info["voice_seconds"] = round(vdur, 1)
-            if vdur + 0.3 > total:
-                info["warning"] = (
-                    "The voiceover is longer than the video and was cut off. "
-                    "Use a shorter script or a longer video."
-                )
+            if vdur + 0.6 > total:
+                extra = vdur + 0.6 - total  # hold the last frame instead of cutting the voice
+                info["extended_seconds"] = round(extra, 1)
+        final_total = total + extra
+
+        inputs = ["-i", str(video)]
+        filters: list[str] = []
+        labels: list[str] = []
+        idx = 1
+        if voice_file is not None:
             inputs += ["-i", str(voice_file)]
-            filters.append(f"[{idx}:a]adelay=300:all=1,volume=1.0[voice]")
+            filters.append(
+                f"[{idx}:a]adelay=300:all=1,highpass=f=90,"
+                "acompressor=threshold=-18dB:ratio=3:attack=5:release=80,volume=1.5[voice]"
+            )
             labels.append("[voice]")
             idx += 1
         if music_path:
             volume = max(0.0, min(float(music_volume), 1.0))
             if not voice_text:
                 volume = max(volume, 0.6)  # music alone should be clearly audible
-            fade_start = max(0.0, total - 1.2)
+            fade_start = max(0.0, final_total - 1.2)
             inputs += ["-stream_loop", "-1", "-i", str(music_path)]
             filters.append(
                 f"[{idx}:a]volume={volume},afade=t=in:d=0.5,"
@@ -389,19 +422,29 @@ def add_audio(
         if len(labels) == 2:
             filters.append(
                 "[voice][music]amix=inputs=2:duration=longest:"
-                "dropout_transition=0:normalize=0[a]"
+                "dropout_transition=0:normalize=0[mix]"
             )
+            mixed = "[mix]"
         else:
-            filters.append(f"{labels[0]}anull[a]")
+            mixed = labels[0]
+        filters.append(f"{mixed}loudnorm=I=-16:TP=-1.5:LRA=11,aresample=44100[a]")
+
+        if extra > 0:
+            filters.append(f"[0:v]tpad=stop_mode=clone:stop_duration={extra:.2f}[v]")
+            vmap = ["-map", "[v]"]
+            vcodec = ["-c:v", "libx264", "-pix_fmt", "yuv420p"]
+        else:
+            vmap = ["-map", "0:v:0"]
+            vcodec = ["-c:v", "copy"]
 
         OUT_DIR.mkdir(exist_ok=True)
         out = OUT_DIR / f"{uuid.uuid4().hex}.mp4"
         cmd = [
             _ffmpeg(), "-y", *inputs,
             "-filter_complex", ";".join(filters),
-            "-map", "0:v:0", "-map", "[a]",
-            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-            "-t", f"{total:.2f}", str(out),
+            *vmap, "-map", "[a]",
+            *vcodec, "-c:a", "aac", "-b:a", "192k",
+            "-t", f"{final_total:.2f}", str(out),
         ]
         proc = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
         if proc.returncode != 0:

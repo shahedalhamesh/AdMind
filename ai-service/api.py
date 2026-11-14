@@ -28,7 +28,7 @@ import tools
 import transcribe
 import verify
 from main import run_with_retry
-from media_prompt import to_image_prompt
+from media_prompt import to_image_prompt, with_safety
 from profile_extract import extract_profile
 from reel_api import router as reel_router
 
@@ -390,7 +390,8 @@ def _media_file(name: str) -> Path:
 def media_image(body: ImageRequest):
     """Generate one image. Takes a few seconds to about a minute."""
     if body.raw_prompt:
-        image_prompt = body.request
+        # a raw prompt skips the rewrite but never the safety wording
+        image_prompt = with_safety(body.request)
     else:
         profile = mm.get_profile(body.company_id, body.client_id)
         image_prompt = to_image_prompt(body.request, profile)
