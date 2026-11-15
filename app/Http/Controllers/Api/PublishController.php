@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ContentItem;
+use App\Jobs\PublishPost;
 use App\Models\PublishJob;
 use App\Models\SocialAccount;
+use App\Services\Publishing\PublishManager;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,9 +19,10 @@ use Illuminate\Support\Facades\DB;
  *   approved --schedule--> scheduled --mark-published--> published
  *                              |--cancel--> approved
  *
- * Posting itself is manual for now: at the scheduled time the team posts the content and then calls
+ * PUBLISH_PROVIDER=manual (default): at the scheduled time the team posts the content and then calls
  * mark-published. A job that is still "pending" after its time is overdue (the UI should highlight it).
- * Automatic posting through the platforms' APIs can replace the manual step later.
+ * PUBLISH_PROVIDER=simulation|meta: the queue worker publishes by itself at scheduled_at (PublishPost job),
+ * and "publish-now" publishes right away. Failed jobs can be retried with publish-now.
  */
 class PublishController extends Controller
 {
@@ -82,6 +85,7 @@ class PublishController extends Controller
 
             return $job;
         });
+        $this->queueAutomatic($job);
 
         return response()->json($job->load('socialAccount:id,platform,account_name'), 201);
     }
@@ -99,6 +103,8 @@ class PublishController extends Controller
             ContentItem::whereKey($job->content_id)->update(['scheduled_at' => $data['scheduled_at']]);
         });
 
+        $this->queueAutomatic($job->fresh());
+
         return response()->json($job->fresh());
     }
 
@@ -114,6 +120,27 @@ class PublishController extends Controller
         });
 
         return response()->json($job->fresh());
+    }
+
+    /**
+     * Publish a pending or failed post right now with the automatic provider (simulation or meta).
+     * Returns 202: the queue worker does it; read the job again (GET /publish-jobs) for the result.
+     */
+    public function publishNow(Request $request, int $id): JsonResponse
+    {
+        abort_unless(PublishManager::automatic(), 422, 'Automatic publishing is off. Post it by hand and use mark-published.');
+        $job = $this->visible($request)->findOrFail($id);
+        abort_unless(in_array($job->status, ['pending', 'failed'], true), 422, 'Only a pending or failed post can be published.');
+
+        DB::transaction(function () use ($job) {
+            if ($job->status === 'failed') {
+                $job->forceFill(['status' => 'pending', 'last_error' => null])->save();
+                ContentItem::whereKey($job->content_id)->update(['status' => 'scheduled']);
+            }
+        });
+        PublishPost::dispatch($job->id, true);
+
+        return response()->json($job->fresh(), 202);
     }
 
     /** The team posted it: record it. Body (optional): external_post_id (the post's id or link on the platform). */
@@ -135,6 +162,14 @@ class PublishController extends Controller
         });
 
         return response()->json($job->fresh());
+    }
+
+    /** With an automatic provider, wake the queue worker at the scheduled time. */
+    private function queueAutomatic(PublishJob $job): void
+    {
+        if (PublishManager::automatic()) {
+            PublishPost::dispatch($job->id)->delay($job->scheduled_at);
+        }
     }
 
     /** A client's own login only sees the posts of its client. */

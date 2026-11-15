@@ -135,6 +135,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('publish-jobs/{id}')->whereNumber('id')->group(function () {
         Route::put('/', [PublishController::class, 'reschedule'])->middleware('permission:content.update');
         Route::post('/cancel', [PublishController::class, 'cancel'])->middleware('permission:content.update');
+        Route::post('/publish-now', [PublishController::class, 'publishNow'])->middleware('permission:content.update');
         Route::post('/mark-published', [PublishController::class, 'markPublished'])->middleware('permission:content.update');
     });
 
