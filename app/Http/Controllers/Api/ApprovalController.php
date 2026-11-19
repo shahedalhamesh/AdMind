@@ -9,6 +9,7 @@ use App\Models\Approval;
 use App\Models\Client;
 use App\Models\ContentItem;
 use App\Models\Task;
+use App\Services\AiPolicyService;
 use App\Services\ContentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -125,6 +126,15 @@ class ApprovalController extends Controller
             ]);
         }
 
+        // The client's final approval + an autonomous AI policy with auto_publish: schedule the post by itself
+        $autoJob = null;
+        if (! $internal && $data['decision'] === 'approved') {
+            $autoJob = AiPolicyService::autoSchedule($item);
+            if ($autoJob) {
+                $newStatus = 'scheduled';
+            }
+        }
+
         // Tell the people who reviewed it (not the one who just decided)
         $reviewers = array_diff(array_unique(array_filter(array_merge(
             ContentService::reviewerIds($approval->company_id, Client::find($item->client_id)),
@@ -136,6 +146,11 @@ class ApprovalController extends Controller
             $data['comment'] ?? null,
             ['content_id' => $item->id, 'task_id' => $item->task_id, 'decision' => $data['decision']]);
 
-        return response()->json(['stage' => $internal ? 'internal' : 'client', 'approval' => $approval, 'content_status' => $newStatus]);
+        return response()->json([
+            'stage' => $internal ? 'internal' : 'client',
+            'approval' => $approval,
+            'content_status' => $newStatus,
+            'auto_publish_job_id' => $autoJob?->id, // set when the AI policy scheduled the post by itself
+        ]);
     }
 }

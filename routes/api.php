@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\TeamJoinController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Middleware\AuditRequests;
+use App\Http\Middleware\EnforceAiPolicy;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
@@ -128,7 +129,7 @@ Route::middleware(['auth:sanctum', AuditRequests::class])->group(function () {
         Route::get('/', [TaskController::class, 'show'])->middleware('permission:tasks.view');
         Route::put('/', [TaskController::class, 'update'])->middleware('permission:tasks.update');
         Route::delete('/', [TaskController::class, 'destroy'])->middleware('permission:tasks.delete');
-        Route::post('/run', [TaskController::class, 'run'])->middleware('permission:tasks.assign');
+        Route::post('/run', [TaskController::class, 'run'])->middleware(['permission:tasks.assign', EnforceAiPolicy::class]);
         Route::post('/dependencies', [TaskController::class, 'addDependency'])->middleware('permission:tasks.assign');
         Route::delete('/dependencies/{dependsOnId}', [TaskController::class, 'removeDependency'])
             ->whereNumber('dependsOnId')->middleware('permission:tasks.assign');
@@ -161,7 +162,7 @@ Route::middleware(['auth:sanctum', AuditRequests::class])->group(function () {
         Route::put('/', [ContentController::class, 'update'])->middleware('permission:content.update');
         Route::post('/versions', [ContentController::class, 'addVersion'])->middleware('permission:content.update');
         Route::post('/submit', [ContentController::class, 'submit'])->middleware('permission:content.update');
-        Route::post('/revise', [ContentController::class, 'revise'])->middleware('permission:content.update');
+        Route::post('/revise', [ContentController::class, 'revise'])->middleware(['permission:content.update', EnforceAiPolicy::class]);
         Route::post('/schedule', [PublishController::class, 'schedule'])->middleware('permission:content.update');
     });
 
@@ -193,14 +194,14 @@ Route::middleware(['auth:sanctum', AuditRequests::class])->group(function () {
 
     // Recommendations (the AI reads the numbers and proposes next actions)
     Route::get('/recommendations', [RecommendationController::class, 'index'])->middleware('permission:clients.view');
-    Route::post('/recommendations/generate', [RecommendationController::class, 'generate'])->middleware('permission:agents.run');
+    Route::post('/recommendations/generate', [RecommendationController::class, 'generate'])->middleware(['permission:agents.run', EnforceAiPolicy::class]);
     Route::post('/recommendations/{id}/accept', [RecommendationController::class, 'accept'])->whereNumber('id')->middleware('permission:tasks.assign');
     Route::post('/recommendations/{id}/dismiss', [RecommendationController::class, 'dismiss'])->whereNumber('id')->middleware('permission:tasks.assign');
 
     // Media library and media of content
     Route::get('/media', [MediaController::class, 'index'])->middleware('permission:content.view');
     Route::post('/media', [MediaController::class, 'store'])->middleware('permission:content.create');
-    Route::post('/media/generate', [MediaController::class, 'generate'])->middleware('permission:content.create');
+    Route::post('/media/generate', [MediaController::class, 'generate'])->middleware(['permission:content.create', EnforceAiPolicy::class]);
     Route::get('/media/{id}', [MediaController::class, 'show'])->whereNumber('id')->middleware('permission:content.view');
     Route::delete('/media/{id}', [MediaController::class, 'destroy'])->whereNumber('id')->middleware('permission:content.update');
     Route::get('/content/{id}/media', [MediaController::class, 'forContent'])->whereNumber('id')->middleware('permission:content.view');
@@ -222,7 +223,7 @@ Route::middleware(['auth:sanctum', AuditRequests::class])->group(function () {
         Route::put('/', [MeetingController::class, 'update'])->middleware('permission:agents.run');
         Route::delete('/', [MeetingController::class, 'destroy'])->middleware('permission:tasks.assign');
         Route::post('/recording', [MeetingController::class, 'uploadRecording'])->middleware('permission:agents.run');
-        Route::post('/summarize', [MeetingController::class, 'summarize'])->middleware('permission:agents.run');
+        Route::post('/summarize', [MeetingController::class, 'summarize'])->middleware(['permission:agents.run', EnforceAiPolicy::class]);
         Route::post('/action-items', [MeetingController::class, 'addActionItem'])->middleware('permission:agents.run');
     });
     Route::prefix('meeting-action-items/{id}')->whereNumber('id')->group(function () {
@@ -242,7 +243,7 @@ Route::middleware(['auth:sanctum', AuditRequests::class])->group(function () {
     Route::post('/notifications/{id}/read', [NotificationController::class, 'read'])->whereNumber('id');
 
     // AI agents
-    Route::middleware('permission:agents.run')->prefix('agent')->group(function () {
+    Route::middleware(['permission:agents.run', EnforceAiPolicy::class])->prefix('agent')->group(function () {
         Route::post('/chat', [AgentController::class, 'chat']);
         Route::post('/run', [AgentController::class, 'run']);
         Route::get('/runs/{id}', [AgentController::class, 'show']);
