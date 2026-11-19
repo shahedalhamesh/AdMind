@@ -15,9 +15,9 @@ class Contract extends Model
     protected $guarded = ['id', 'company_id'];
 
     protected $casts = [
-        'starts_on' => 'date',
-        'ends_on' => 'date',
-        'renewal_date' => 'date',
+        'starts_on' => 'date:Y-m-d',
+        'ends_on' => 'date:Y-m-d',
+        'renewal_date' => 'date:Y-m-d',
         'amount' => 'decimal:2',
     ];
 

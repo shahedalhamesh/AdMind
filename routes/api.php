@@ -8,6 +8,9 @@ use App\Http\Controllers\Api\ApprovalController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CampaignController;
 use App\Http\Controllers\Api\ClientController;
+use App\Http\Controllers\Api\ClientInteractionController;
+use App\Http\Controllers\Api\ContractController;
+use App\Http\Controllers\Api\SatisfactionController;
 use App\Http\Controllers\Api\ClientRequestController;
 use App\Http\Controllers\Api\ClientDocumentController;
 use App\Http\Controllers\Api\ClientProfileController;
@@ -64,6 +67,21 @@ Route::middleware(['auth:sanctum', AuditRequests::class])->group(function () {
     Route::post('/join-requests/{id}/approve', [TeamJoinController::class, 'approve'])->whereNumber('id')->middleware('permission:users.create');
     Route::post('/join-requests/{id}/reject', [TeamJoinController::class, 'reject'])->whereNumber('id')->middleware('permission:users.create');
 
+    // Interaction history, satisfaction and contracts
+    Route::put('/client-interactions/{id}', [ClientInteractionController::class, 'update'])->whereNumber('id')->middleware('permission:clients.update');
+    Route::delete('/client-interactions/{id}', [ClientInteractionController::class, 'destroy'])->whereNumber('id')->middleware('permission:clients.update');
+    Route::get('/satisfaction/overview', [SatisfactionController::class, 'overview'])->middleware('permission:clients.view');
+    Route::post('/satisfaction', [SatisfactionController::class, 'submit'])->middleware('permission:requests.create');
+    Route::delete('/satisfaction/{id}', [SatisfactionController::class, 'destroy'])->whereNumber('id')->middleware('permission:clients.update');
+    Route::get('/contracts', [ContractController::class, 'index'])->middleware('permission:clients.view');
+    Route::post('/contracts', [ContractController::class, 'store'])->middleware('permission:clients.update');
+    Route::prefix('contracts/{id}')->whereNumber('id')->group(function () {
+        Route::get('/', [ContractController::class, 'show'])->middleware('permission:clients.view');
+        Route::put('/', [ContractController::class, 'update'])->middleware('permission:clients.update');
+        Route::post('/cancel', [ContractController::class, 'cancel'])->middleware('permission:clients.update');
+        Route::delete('/', [ContractController::class, 'destroy'])->middleware('permission:clients.update');
+    });
+
     // AI policies (how much the AI may do by itself) and the audit trail
     Route::get('/ai-policies', [AiPolicyController::class, 'index'])->middleware('permission:clients.view');
     Route::get('/ai-policies/effective', [AiPolicyController::class, 'effective'])->middleware('permission:clients.view');
@@ -88,6 +106,11 @@ Route::middleware(['auth:sanctum', AuditRequests::class])->group(function () {
         Route::post('/documents', [ClientDocumentController::class, 'store'])->middleware('permission:clients.update');
         Route::delete('/documents/{documentId}', [ClientDocumentController::class, 'destroy'])
             ->whereNumber('documentId')->middleware('permission:clients.update');
+
+        Route::get('/interactions', [ClientInteractionController::class, 'index'])->middleware('permission:clients.view');
+        Route::post('/interactions', [ClientInteractionController::class, 'store'])->middleware('permission:clients.update');
+        Route::get('/satisfaction', [SatisfactionController::class, 'index'])->middleware('permission:clients.view');
+        Route::post('/satisfaction', [SatisfactionController::class, 'store'])->middleware('permission:clients.update');
 
         Route::get('/social-accounts', [SocialAccountController::class, 'index'])->middleware('permission:clients.view');
         Route::post('/social-accounts', [SocialAccountController::class, 'store'])->middleware('permission:clients.update');
