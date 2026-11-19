@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Api\AdminCompanyController;
 use App\Http\Controllers\Api\AgentController;
+use App\Http\Controllers\Api\AiPolicyController;
+use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\ApprovalController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CampaignController;
@@ -24,6 +26,7 @@ use App\Http\Controllers\Api\SocialAccountController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\TeamJoinController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Middleware\AuditRequests;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
@@ -39,7 +42,7 @@ Route::post('/login/google', [AuthController::class, 'loginGoogle'])->middleware
 // Media files: opened by a signed link (valid 2 hours) so <img>/<video> tags work without a token
 Route::get('/media/{id}/file', [MediaController::class, 'file'])->whereNumber('id')->middleware('signed')->name('media.file');
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', AuditRequests::class])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
@@ -60,6 +63,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/join-requests', [TeamJoinController::class, 'requests'])->middleware('permission:users.view');
     Route::post('/join-requests/{id}/approve', [TeamJoinController::class, 'approve'])->whereNumber('id')->middleware('permission:users.create');
     Route::post('/join-requests/{id}/reject', [TeamJoinController::class, 'reject'])->whereNumber('id')->middleware('permission:users.create');
+
+    // AI policies (how much the AI may do by itself) and the audit trail
+    Route::get('/ai-policies', [AiPolicyController::class, 'index'])->middleware('permission:clients.view');
+    Route::get('/ai-policies/effective', [AiPolicyController::class, 'effective'])->middleware('permission:clients.view');
+    Route::put('/ai-policies', [AiPolicyController::class, 'save'])->middleware('permission:clients.update');
+    Route::delete('/ai-policies/{id}', [AiPolicyController::class, 'destroy'])->whereNumber('id')->middleware('permission:clients.update');
+    Route::get('/audit-logs', [AuditLogController::class, 'index'])->middleware('permission:audit.view');
 
     // Clients
     Route::get('/clients', [ClientController::class, 'index'])->middleware('permission:clients.view');
