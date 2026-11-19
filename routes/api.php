@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AdminCompanyController;
 use App\Http\Controllers\Api\AgentController;
+use App\Http\Controllers\Api\AgentPerformanceController;
 use App\Http\Controllers\Api\AiPolicyController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\ApprovalController;
@@ -87,6 +88,7 @@ Route::middleware(['auth:sanctum', AuditRequests::class])->group(function () {
     Route::get('/ai-policies/effective', [AiPolicyController::class, 'effective'])->middleware('permission:clients.view');
     Route::put('/ai-policies', [AiPolicyController::class, 'save'])->middleware('permission:clients.update');
     Route::delete('/ai-policies/{id}', [AiPolicyController::class, 'destroy'])->whereNumber('id')->middleware('permission:clients.update');
+    Route::get('/agent-performance', [AgentPerformanceController::class, 'index'])->middleware('permission:reports.create');
     Route::get('/audit-logs', [AuditLogController::class, 'index'])->middleware('permission:audit.view');
 
     // Clients
