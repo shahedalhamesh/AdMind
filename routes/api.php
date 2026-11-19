@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\MeetingController;
 use App\Http\Controllers\Api\RecommendationController;
 use App\Http\Controllers\Api\MetricController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\PublicMediaController;
 use App\Http\Controllers\Api\PublishController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SocialAccountController;
@@ -43,6 +44,10 @@ Route::post('/join/{token}', [InvitationController::class, 'accept'])->middlewar
 Route::get('/team-join/{token}', [TeamJoinController::class, 'preview'])->middleware('throttle:30,1');
 Route::post('/team-join/{token}', [TeamJoinController::class, 'submit'])->middleware('throttle:5,1');
 Route::post('/login/google', [AuthController::class, 'loginGoogle'])->middleware('throttle:10,1');
+
+// Temporary signed link that lets Instagram download a media file when publishing (no login, HMAC + expiry).
+Route::get('/public-media/{id}/{exp}/{sig}/{file}', [PublicMediaController::class, 'show'])
+    ->whereNumber(['id', 'exp'])->middleware('throttle:60,1');
 
 // Media files: opened by a signed link (valid 2 hours) so <img>/<video> tags work without a token
 Route::get('/media/{id}/file', [MediaController::class, 'file'])->whereNumber('id')->middleware('signed')->name('media.file');
