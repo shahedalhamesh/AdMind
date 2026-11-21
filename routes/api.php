@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\TeamJoinController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Middleware\AuditRequests;
+use App\Http\Middleware\BlockPlatformAdminTenantData;
 use App\Http\Middleware\EnforceAiPolicy;
 use Illuminate\Support\Facades\Route;
 
@@ -52,7 +53,7 @@ Route::get('/public-media/{id}/{exp}/{sig}/{file}', [PublicMediaController::clas
 // Media files: opened by a signed link (valid 2 hours) so <img>/<video> tags work without a token
 Route::get('/media/{id}/file', [MediaController::class, 'file'])->whereNumber('id')->middleware('signed')->name('media.file');
 
-Route::middleware(['auth:sanctum', AuditRequests::class])->group(function () {
+Route::middleware(['auth:sanctum', AuditRequests::class, BlockPlatformAdminTenantData::class])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 

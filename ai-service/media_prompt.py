@@ -16,10 +16,10 @@ log = logging.getLogger("admind")
 
 # Added to EVERY prompt, whatever the request says.
 SAFETY_SUFFIX = (
-    " Family-friendly, modest and respectful. If any people appear, they are "
-    "fully clothed in ordinary everyday clothes, shown from a distance or "
-    "from behind, never in swimwear or revealing clothing; no close-ups of "
-    "bodies. Focus on the place, the product and the atmosphere."
+    " Natural, realistic, candid look. Family-friendly, modest and respectful. "
+    "If any people appear, they are fully and modestly clothed in ordinary everyday "
+    "clothes covering shoulders, arms and legs, never in swimwear or revealing "
+    "clothing; no close-ups of bodies."
 )
 
 NEGATIVE_PROMPT = (
@@ -38,10 +38,11 @@ Rules:
 - The result must be family-friendly and modest, suitable for a conservative
   Arabic audience. NEVER describe nudity, swimwear, bikinis, bare skin,
   revealing or tight clothing, suggestive poses, or romantic/sensual scenes.
-- For places such as pools, beaches, gyms or spas: show the empty or calm place
-  (water, architecture, loungers, plants, light, reflections). If people are
-  needed, keep them few, far away or seen from behind, fully clothed in
-  ordinary everyday clothes. No close-ups of bodies.
+- People and hands may appear naturally when it fits (for example someone
+  enjoying a drink), but always fully and modestly clothed in ordinary everyday
+  clothes that cover shoulders, arms and legs. Never swimwear, even at a pool,
+  beach, gym or spa. No close-ups of bodies.
+- Make it look like a natural, realistic, candid photo, not a stiff render.
 - Do NOT put any text, letters, words, logos, or watermarks in the image.
 - No real people's names and no brand names.
 - Use only what the request and the profile support; do not invent product
