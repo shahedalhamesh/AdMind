@@ -3,8 +3,11 @@
 namespace App\Services\Publishing;
 
 use App\Models\PublishJob;
+use App\Models\MediaAsset;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 
 /**
  * Real posting to Instagram through the Instagram API (content publishing):
@@ -50,6 +53,7 @@ class MetaProvider implements PublishProvider
     {
         $first = $media->first();
         $isVideo = $first->type === 'video';
+        $videoFile = $isVideo ? $this->prepareVideo($first, $cfg) : null;
 
         // Several images: a carousel.
         if ($media->count() > 1 && $media->every(fn ($m) => $m->type === 'image') && $type === 'post') {
@@ -65,6 +69,21 @@ class MetaProvider implements PublishProvider
             ], $cfg);
 
             return $r['id'];
+        }
+
+        // A video is pushed straight to Instagram (resumable upload), so Instagram never has to download it
+        // from our tunnel. If the account cannot use resumable uploads, fall back to the public link below.
+        if ($isVideo) {
+            try {
+                $id = $this->uploadVideo($videoFile, $type === 'story' ? 'STORIES' : 'REELS', $caption, $cfg);
+                $this->waitUntilReady($id, $cfg);
+
+                return $id;
+            } catch (RuntimeException $e) {
+                if (! str_starts_with($e->getMessage(), 'Resumable upload unavailable')) {
+                    throw $e;
+                }
+            }
         }
 
         $params = [];
@@ -86,6 +105,71 @@ class MetaProvider implements PublishProvider
 
         if ($isVideo) {
             $this->waitUntilReady($id, $cfg);
+        }
+
+        return $id;
+    }
+
+    /**
+     * Instagram only accepts 23-60 FPS video, but the AI service makes 16 FPS clips (and small ones).
+     * Convert once to 720x1280, 30 FPS, H.264 + AAC with ffmpeg and keep the result in storage/app/ig-ready.
+     * The public link then serves this converted copy.
+     */
+    private function prepareVideo(MediaAsset $media, array $cfg): string
+    {
+        $disk = Storage::disk('local');
+        $out = "ig-ready/{$media->id}.mp4";
+        if ($disk->exists($out)) {
+            return $disk->path($out);
+        }
+        $disk->makeDirectory('ig-ready');
+
+        $process = new Process([
+            $cfg['ffmpeg'] ?: 'ffmpeg', '-y', '-v', 'error', '-i', $disk->path($media->path),
+            '-map', '0:v:0', '-map', '0:a?',
+            '-vf', 'scale=720:1280:force_original_aspect_ratio=increase:flags=lanczos,crop=720:1280,fps=30,format=yuv420p',
+            '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'veryfast', '-crf', '20', '-x264-params', 'open-gop=0', '-r', '30',
+            '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
+            '-movflags', '+faststart', $disk->path($out),
+        ]);
+        $process->setTimeout(100);
+        $process->run();
+
+        if (! $process->isSuccessful() || ! $disk->exists($out)) {
+            $disk->delete($out);
+            throw new RuntimeException('Could not convert the video for Instagram (is ffmpeg installed?): '
+                .mb_substr(trim($process->getErrorOutput() ?: $process->getOutput()), -300));
+        }
+
+        return $disk->path($out);
+    }
+
+    /** Create a resumable container and send the video file to rupload.facebook.com. Returns the container id. */
+    private function uploadVideo(string $file, string $mediaType, string $caption, array $cfg): string
+    {
+        $params = ['media_type' => $mediaType, 'upload_type' => 'resumable'];
+        if ($mediaType !== 'STORIES') {
+            $params['caption'] = $caption;
+        }
+        try {
+            $container = $this->call('post', "{$cfg['ig_user_id']}/media", $params, $cfg);
+        } catch (RuntimeException $e) {
+            throw new RuntimeException('Resumable upload unavailable: '.$e->getMessage());
+        }
+        $id = (string) $container['id'];
+
+        $response = Http::withHeaders([
+            'Authorization' => 'OAuth '.$cfg['access_token'],
+            'offset' => '0',
+            'file_size' => (string) filesize($file),
+        ])->withBody((string) file_get_contents($file), 'application/octet-stream')
+            ->timeout(120)
+            ->post("https://rupload.facebook.com/ig-api-upload/{$cfg['graph_version']}/{$id}");
+
+        if ($response->failed() || ! $response->json('success')) {
+            $msg = $response->json('debug_info.message') ?? $response->json('error.message') ?? $response->body();
+            throw new RuntimeException('Instagram video upload failed: '
+                .str_replace((string) $cfg['access_token'], '***', mb_substr((string) $msg, 0, 300)));
         }
 
         return $id;

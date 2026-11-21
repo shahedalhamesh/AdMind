@@ -20,5 +20,7 @@ return [
         'public_base_url' => env('META_PUBLIC_BASE_URL'),
         'media_link_minutes' => 60,
         'video_wait_seconds' => 300,
+        // ffmpeg converts AI videos to what Instagram accepts (30 FPS). Full path if it is not on the PATH.
+        'ffmpeg' => env('META_FFMPEG', 'ffmpeg'),
     ],
 ];

@@ -25,7 +25,10 @@ class PublicMediaController extends Controller
         $full = Storage::disk('local')->path($media->path);
 
         if ($media->type === 'video') {
-            return response()->file($full, ['Content-Type' => 'video/mp4']);
+            // the copy converted for Instagram (30 FPS) when it exists
+            $ready = Storage::disk('local')->path("ig-ready/{$media->id}.mp4");
+
+            return response()->file(is_file($ready) ? $ready : $full, ['Content-Type' => 'video/mp4']);
         }
 
         $ext = strtolower(pathinfo($full, PATHINFO_EXTENSION));
