@@ -202,6 +202,9 @@ def run_reel(job_id: str, company_id: int, client_id: int, request: str,
         _set(job_id, step="image")
         image = media.generate_image(plan["image_prompt"], aspect_ratio=aspect_ratio)
 
+        if plan["music"] and not media.MUSIC_ENABLED:
+            warnings.append("Background music is not available at the moment: the reel has no music.")
+
         _set(job_id, step="video_voice_music")
         with ThreadPoolExecutor(max_workers=3) as pool:
             f_video = pool.submit(
@@ -209,7 +212,7 @@ def run_reel(job_id: str, company_id: int, client_id: int, request: str,
             )
             f_music = (
                 pool.submit(media.generate_music, plan["music"], seconds)
-                if plan["music"] else None
+                if plan["music"] and media.MUSIC_ENABLED else None
             )
             f_script = (
                 pool.submit(write_script, company_id, client_id, request,

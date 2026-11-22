@@ -26,7 +26,15 @@ log = logging.getLogger("admind")
 HF_TOKEN = os.getenv("HF_TOKEN") or None
 IMAGE_SPACE = os.getenv("IMAGE_SPACE", "black-forest-labs/FLUX.1-schnell")
 VIDEO_SPACE = os.getenv("VIDEO_SPACE", "kulkas2pintu/wan777")
-MUSIC_SPACE = os.getenv("MUSIC_SPACE", "ACE-Step/ACE-Step")
+# Stable Audio Open (ZeroGPU): simple API /predict(prompt, seconds_total, steps, cfg_scale), up to ~47 s.
+# The older ACE-Step/ACE-Step Space changed its API (v1.5), so it is no longer the default. Setting
+# MUSIC_SPACE to a Space whose name contains "ace-step" switches back to the old ACE-Step call.
+MUSIC_SPACE = os.getenv("MUSIC_SPACE", "artificialguybr/Stable-Audio-Open-Zero")
+MUSIC_STEPS = int(os.getenv("MUSIC_STEPS", "60"))
+# Off by default: every free music Space we tried is broken at the moment (their own models are gone or
+# crash). The reel is then voice only. Set MUSIC_ENABLED=1 (and MUSIC_SPACE) when a working Space exists.
+MUSIC_ENABLED = os.getenv("MUSIC_ENABLED", "0") == "1"
+MUSIC_MAX_SECONDS = 45
 OUT_DIR = Path(__file__).parent / "media_out"
 
 # aspect ratio -> (width, height); all multiples of 32
@@ -262,12 +270,47 @@ def generate_clip(
 # ------------------------------------------------------------------ music
 
 
+def _audio_path(result) -> str:
+    """The file path inside whatever a Space returned (path, dict, or a list of them)."""
+    audio = result[0] if isinstance(result, (list, tuple)) else result
+    return audio["path"] if isinstance(audio, dict) else audio
+
+
 def generate_music(style: str, seconds: float = 10.0) -> Path:
-    """Instrumental background music from ACE-Step. Returns the saved file.
+    """Instrumental background music. Returns the saved file.
 
     The result can be a bit longer than `seconds`; add_audio trims and fades it.
     """
-    duration = int(max(5, min(math.ceil(seconds) + 2, 60)))
+    duration = int(max(5, min(math.ceil(seconds) + 2, MUSIC_MAX_SECONDS)))
+
+    if "ace-step" in MUSIC_SPACE.lower():
+        return _generate_music_acestep(style, duration)
+
+    prompt = f"{style}, instrumental background music, no vocals, no speech"
+
+    def _call():
+        return _connect(MUSIC_SPACE).predict(
+            prompt=prompt,
+            seconds_total=duration,
+            steps=MUSIC_STEPS,
+            cfg_scale=7,
+            api_name="/predict",
+        )
+
+    last_error: Exception | None = None
+    for attempt in range(1, 3):  # a second try helps when the GPU worker was cold or busy
+        try:
+            return _save(_audio_path(_retry(_call)), ".wav")
+        except Exception as e:
+            last_error = e
+            log.warning("music attempt %d/2 failed: %s: %s", attempt, type(e).__name__, e)
+            if attempt < 2:
+                time.sleep(RETRY_DELAY_SEC)
+    raise RuntimeError(f"Music generation failed: {last_error}")
+
+
+def _generate_music_acestep(style: str, duration: int) -> Path:
+    """The old ACE-Step Space API (/__call__). Kept for a Space that still has it."""
     prompt = f"{style}, instrumental, background music, no vocals"
 
     last_error: Exception | None = None
@@ -287,10 +330,7 @@ def generate_music(style: str, seconds: float = 10.0) -> Path:
             return _connect(MUSIC_SPACE).submit(**kwargs).result(timeout=900)
 
         try:
-            result = _retry(_call)
-            audio = result[0] if isinstance(result, (list, tuple)) else result
-            path = audio["path"] if isinstance(audio, dict) else audio
-            return _save(path, ".mp3")
+            return _save(_audio_path(_retry(_call)), ".mp3")
         except Exception as e:
             last_error = e
             log.warning("music attempt failed: %s: %s", type(e).__name__, e)
