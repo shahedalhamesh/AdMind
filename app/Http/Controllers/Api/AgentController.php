@@ -9,6 +9,7 @@ use App\Models\Client;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\ContentService;
+use App\Services\StuckWork;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -81,9 +82,21 @@ class AgentController extends Controller
         return response()->json(['agent_run_id' => $run->id, 'status' => 'running'], 202);
     }
 
+    /**
+     * Poll this while status is running. Besides the result it tells which agent is working now
+     * (`current_agent`), how long it runs (`elapsed_seconds`) and the steps so far (`events`, ordered).
+     * A run stuck for more than 10 minutes is marked failed here, so the polling ends.
+     */
     public function show(int $id): JsonResponse
     {
+        StuckWork::sweepThrottled();
         $run = AgentRun::findOrFail($id);
+
+        $events = $run->agentRunSteps()->orderBy('step_order')
+            ->get(['step_order', 'agent', 'delegated_by', 'action', 'status', 'started_at', 'finished_at']);
+        $current = $run->status === 'running'
+            ? ($events->where('status', 'running')->last()?->agent ?? $run->agent)
+            : null;
 
         return response()->json([
             'id' => $run->id,
@@ -99,6 +112,9 @@ class AgentController extends Controller
             'error' => $run->error,
             'started_at' => $run->started_at,
             'finished_at' => $run->finished_at,
+            'current_agent' => $current,
+            'elapsed_seconds' => $run->started_at->diffInSeconds($run->finished_at ?? now()),
+            'events' => $events->values(),
         ]);
     }
 
