@@ -41,6 +41,16 @@ import Recommendations from './pages/Recommendations';
 import Platform from './pages/Platform';
 import Campaigns from './pages/Campaigns';
 
+import JoinInvite from './pages/JoinInvite';
+import TeamJoin from './pages/TeamJoin';
+import TeamAccess from './pages/TeamAccess';
+
+import Requests from './pages/Requests';
+import Publishing from './pages/Publishing';
+import Profile from './pages/Profile';
+import InsightsGuard from './components/InsightsGuard';
+import AssistantGuard from './components/AssistantGuard';
+
 const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
 });
@@ -73,6 +83,31 @@ function App() {
 
                                     {/* Agency staff: Owner, Manager, Employee */}
                                     <Route element={<StaffRoute />}>
+                                        <Route path="/profile" element={<Profile />} />
+                                        <Route
+                                            path="/publishing"
+                                            element={
+                                                <RequirePermission perm="content.view">
+                                                    <Publishing />
+                                                </RequirePermission>
+                                            }
+                                        />
+                                        <Route
+                                            path="/requests"
+                                            element={
+                                                <RequirePermission perm="clients.view">
+                                                    <Requests />
+                                                </RequirePermission>
+                                            }
+                                        />
+                                        <Route
+                                            path="/team/access"
+                                            element={
+                                                <RequirePermission perm="users.create">
+                                                    <TeamAccess />
+                                                </RequirePermission>
+                                            }
+                                        />
                                         <Route path="/dashboard" element={<Home />} />
                                         <Route
                                             path="/clients"
@@ -126,7 +161,9 @@ function App() {
                                             path="/assistant"
                                             element={
                                                 <RequirePermission perm="agents.run">
-                                                    <Assistant />
+                                                    <AssistantGuard>
+                                                        <Assistant />
+                                                    </AssistantGuard>
                                                 </RequirePermission>
                                             }
                                         />
@@ -158,7 +195,9 @@ function App() {
                                             path="/meetings"
                                             element={
                                                 <RequirePermission perm="clients.view">
-                                                    <Meetings />
+                                                    <InsightsGuard>
+                                                        <Meetings />
+                                                    </InsightsGuard>
                                                 </RequirePermission>
                                             }
                                         />
@@ -166,7 +205,9 @@ function App() {
                                             path="/meetings/:id"
                                             element={
                                                 <RequirePermission perm="clients.view">
-                                                    <MeetingDetail />
+                                                    <InsightsGuard>
+                                                        <MeetingDetail />
+                                                    </InsightsGuard>
                                                 </RequirePermission>
                                             }
                                         />
@@ -174,7 +215,9 @@ function App() {
                                             path="/recommendations"
                                             element={
                                                 <RequirePermission perm="clients.view">
-                                                    <Recommendations />
+                                                    <InsightsGuard>
+                                                        <Recommendations />
+                                                    </InsightsGuard>
                                                 </RequirePermission>
                                             }
                                         />
@@ -197,6 +240,9 @@ function App() {
                                         <Route path="/platform" element={<Platform />} />
                                     </Route>
 
+                                    {/* Public pages (no sign-in) */}
+                                    <Route path="/join/:token" element={<JoinInvite />} />
+                                    <Route path="/team-join/:token" element={<TeamJoin />} />
                                     <Route path="*" element={<Navigate to="/" replace />} />
                                 </Routes>
                             </BrowserRouter>

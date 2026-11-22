@@ -42,6 +42,6 @@ export const mediaApi = {
   remove: (id: number) => api<unknown>(`/media/${id}`, { method: "DELETE" }),
 
   // the AI creates an image (about 30 seconds) or a reel (2 to 12 minutes). Only one at a time: a second request gets 429.
-  generate: (body: { client_id: number; kind: "image" | "reel"; request: string; aspect_ratio: string; language?: "Arabic" | "English" }) =>
+   generate: (body: { client_id: number; kind: "image" | "reel"; request: string; aspect_ratio: string; language?: "Arabic" | "English"; content_id?: number }) =>
     api<MediaItem>("/media/generate", { method: "POST", body }),
 };

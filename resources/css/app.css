@@ -1,97 +1,110 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* =================================
    AdMind - DARK THEME
-   Navy Mocha
+   Petrol + Coral, AI = neon blue
 ================================= */
 
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --background: #242936;
-  --foreground: #F1E9DF;
+  --background: #0A121C;
+  --foreground: #E8EEF6;
 
-  --primary: #596174;
+  --primary: #D9563A;
   --primary-foreground: #FFFFFF;
 
-  --secondary: #737C8D;
-  --secondary-foreground: #FFFFFF;
+  --secondary: #132133;
+  --secondary-foreground: #E8EEF6;
 
-  --tertiary: #927969;
+  --tertiary: #2B93BC;
   --tertiary-foreground: #FFFFFF;
 
-  --card: #343B49;
-  --card-foreground: #F1E9DF;
+  --card: #0F1A27;
+  --card-foreground: #E8EEF6;
 
-  --muted: #3B414F;
-  --muted-foreground: #B9BECB;
+  --muted: #132133;
+  --muted-foreground: #8FA2B6;
 
-  --border: #454957;
-  --input: #454957;
-  --ring: #737C8D;
+  --border: #1B2A3B;
+  --input: #1B2A3B;
+  --ring: #2B93BC;
 
-  --accent: #D5C3B2;
-  --accent-foreground: #34333A;
+  --accent: #FF7A59;
+  --accent-foreground: #0A121C;
 
   --brand-panel-bg: linear-gradient(
     140deg,
-    #414B60 0%,
-    #343B4B 38%,
-    #65554F 72%,
-    #927969 100%
+    #0E4C6C 0%,
+    #0C2F45 45%,
+    #08141F 100%
   );
-  --button-text: #F1E9DF;
+  --button-text: #FFFFFF;
+  --brand-panel-text: #FFFFFF;
 
-  --brand-panel-text: #F7F1E9;
+  /* AI */
+  --ai: #4DD8FF;
+  --ai-2: #7AE6FF;
+  --ai-bg: rgba(77, 216, 255, 0.08);
+  --ai-border: rgba(77, 216, 255, 0.55);
+  --ai-glow: rgba(77, 216, 255, 0.35);
+  --ai-text: #7AE6FF;
+  --ai-on: #031722;
 }
 
 /* =================================
    AdMind - LIGHT THEME
-   Silver Beige
+   Inky steel gray + Coral, AI = electric blue
 ================================= */
 
 [data-theme="light"] {
   color-scheme: light;
 
-  --background: #F3F1EE;
-  --foreground: #303542;
+  --background: #B4BCC7;
+  --foreground: #0F1824;
 
-  --primary: #68748B;
+  --primary: #D9563A;
   --primary-foreground: #FFFFFF;
 
-  --secondary: #9299A7;
-  --secondary-foreground: #FFFFFF;
+  --secondary: #BBC3CD;
+  --secondary-foreground: #0F1824;
 
-  --tertiary: #A88F7D;
+  --tertiary: #1F7FA8;
   --tertiary-foreground: #FFFFFF;
 
- --card: #E1DDD8;
-  --card-foreground: #303542;
+  --card: #C6CDD6;
+  --card-foreground: #0F1824;
 
-  --muted: #EAE4DE;
-  --muted-foreground: #777B85;
+  --muted: #BBC3CD;
+  --muted-foreground: #3F4A58;
 
-  --border: #DFDCE0;
-  --input: #DFDCE0;
-  --ring: #9299A7;
+  --border: #98A2AF;
+  --input: #98A2AF;
+  --ring: #1F7FA8;
 
-  --accent: #D8C6B5;
-  --accent-foreground: #3A3B43;
+  --accent: #D9563A;
+  --accent-foreground: #FFFFFF;
 
   --brand-panel-bg: linear-gradient(
     140deg,
-    #68748B 0%,
-    #858A99 38%,
-    #B3A092 72%,
-    #D8C6B5 100%
+    #0E4C6C 0%,
+    #16607F 50%,
+    #0C2F45 100%
   );
-  --button-text: #303542;
-
+  --button-text: #FFFFFF;
   --brand-panel-text: #FFFFFF;
+
+  /* AI */
+  --ai: #0A8FD6;
+  --ai-2: #0A6FB5;
+  --ai-bg: rgba(10, 143, 214, 0.10);
+  --ai-border: rgba(10, 143, 214, 0.55);
+  --ai-glow: rgba(10, 143, 214, 0.28);
+  --ai-text: #0A5F8F;
+  --ai-on: #FFFFFF;
 }
 
 /* =================================
@@ -113,18 +126,103 @@ body {
   margin: 0;
 }
 
-
 /* Smooth theme transitions */
 * {
   transition-property: background-color, border-color, color;
   transition-duration: 300ms;
 }
 
-/* Main content text */
-[data-theme="light"] .theme-text {
+[data-theme="light"] .theme-text,
+[data-theme="dark"] .theme-text {
   color: var(--foreground) !important;
 }
 
-[data-theme="dark"] .theme-text {
-  color: var(--foreground) !important;
+/* =================================
+   AI SURFACES (glowing blue)
+   usage: className="ai-surface" on panels,
+          "ai-button" on AI buttons,
+          "ai-button ai-button-solid" on the main AI send button,
+          "ai-dot" for the pulsing dot
+================================= */
+
+.ai-surface {
+  position: relative;
+  border: 1px solid var(--ai-border);
+  border-radius: 16px;
+  background: linear-gradient(180deg, var(--ai-bg), transparent 60%), var(--card);
+  box-shadow:
+    0 0 28px -6px var(--ai-glow),
+    inset 0 0 30px -20px var(--ai-glow);
+  overflow: hidden;
+}
+
+.ai-surface::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(120deg, transparent 30%, var(--ai-2) 50%, transparent 70%);
+  background-size: 250% 100%;
+  animation: ai-shimmer 3.5s linear infinite;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.ai-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--ai-text);
+  border: 1px solid var(--ai-border);
+  background: var(--ai-bg);
+  border-radius: 10px;
+  padding: 9px 15px;
+  box-shadow: 0 0 18px -4px var(--ai-glow);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.ai-button:hover {
+  box-shadow: 0 0 26px -2px var(--ai-glow);
+  transform: translateY(-1px);
+}
+
+.ai-button-solid {
+  color: var(--ai-on);
+  background: linear-gradient(135deg, var(--ai-2), var(--ai));
+  border: 0;
+  box-shadow: 0 0 18px var(--ai-glow);
+}
+
+.ai-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ai);
+  box-shadow: 0 0 10px var(--ai);
+  animation: ai-pulse 1.4s ease-in-out infinite;
+}
+
+.ai-text {
+  color: var(--ai-text);
+}
+
+@keyframes ai-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -100% 0; }
+}
+@keyframes ai-pulse {
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-surface::before,
+  .ai-dot,
+  .ai-button {
+    animation: none;
+    transition: none;
+  }
 }

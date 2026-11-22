@@ -29,6 +29,10 @@ export function notificationTarget(n: AppNotification): string | null {
   if (n.type === "meeting_summarized" && d.meeting_id) return `/meetings/${d.meeting_id}`;
   if (n.type === "recommendations_ready") return "/recommendations";
   if (n.type === "media_ready") return "/media";
+  if (n.type === "join_request") return "/team/access";
+  if (n.type === "member_joined") return "/team";
+  if (n.type === "client_request") return "/requests";
+  if (n.type === "request_update") return "/portal";
   if (d.task_id) return "/tasks";
   return null;
 }
@@ -42,4 +46,8 @@ export const NOTIFICATION_LABEL: Record<string, string> = {
   client_feedback: "Client feedback",
   media_ready: "Media ready",
   recommendations_ready: "Recommendations",
+  join_request: "Join request",
+  member_joined: "Joined",
+  client_request: "Client request",
+  request_update: "Request update",
 };

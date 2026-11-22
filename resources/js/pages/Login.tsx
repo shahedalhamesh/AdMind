@@ -7,126 +7,20 @@ import { useTheme } from "../components/ThemeContext";
 import { useAuth } from "../components/AuthContext";
 import { api, ApiError } from "../services/api";
 import { homeFor, type LoginResponse } from "../services/auth";
+import {
+  DARK,
+  LIGHT,
+  NAVY,
+  TERRACOTTA,
+  TURQUOISE,
+  authCss,
+  delay,
+} from "../services/authTheme";
 
 // The Google button only works when the Client ID is set in .env (VITE_GOOGLE_CLIENT_ID).
 const GOOGLE_ENABLED = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 
-/* ------------------------------------------------------------------ */
-/*  Brand palette: Deep Navy + Terracotta + Electric Turquoise + White */
-/* ------------------------------------------------------------------ */
-const NAVY = "#101B32";
-const TERRACOTTA = "#A64B35";
-const TURQUOISE = "#20D5DF";
-
-const DARK = {
-  page: `radial-gradient(ellipse at 20% 10%, ${NAVY} 0%, #0A1222 70%)`,
-  ring: "rgba(255,255,255,0.07)",
-  frame: "rgba(255,255,255,0.16)",
-  frameShadow: "rgba(0,0,0,0.45)",
-  leftBg: `linear-gradient(155deg, #1B2C52 0%, ${NAVY} 50%, #0B1426 100%)`,
-  leftText: "#FFFFFF",
-  leftText2: "rgba(255,255,255,0.85)",
-  grid: "rgba(255,255,255,0.05)",
-  glow1: "rgba(199,91,65,0.6)",
-  glow2: "rgba(166,75,53,0.22)",
-  orbit: "#FFFFFF",
-  logoBg: "#FFFFFF",
-  logoIcon: NAVY,
-  pillBorder: "#D9694C",
-  pillBg: "rgba(166,75,53,0.28)",
-  live: TURQUOISE,
-  eyebrow: "#E58A70",
-  highlight: `linear-gradient(100deg,${TURQUOISE} 0%,#A6F2F6 30%,${TURQUOISE} 50%,#A6F2F6 70%,${TURQUOISE} 100%)`,
-  cardBg: "rgba(6,12,26,0.5)",
-  cardBorder: "rgba(255,255,255,0.28)",
-  flow: "rgba(255,255,255,0.7)",
-  chartIcon: "#FFFFFF",
-  rightBg: "#0B1426",
-  text: "#FFFFFF",
-  muted: "#AAB6CE",
-  field: "#16223F",
-  border: "#2E3E63",
-  placeholder: "#7F8CA8",
-  link: "#EE9A80",
-  btnBg: "#BC553B",
-  btnBorder: "#E58A70",
-  btnShadow: "rgba(188,85,59,0.45)",
-  error: "#FF8A7A",
-};
-
-const LIGHT = {
-  page: "radial-gradient(ellipse at 20% 10%, #A9B5CD 0%, #6F7E9F 75%)",
-  ring: "rgba(16,27,50,0.08)",
-  frame: "rgba(16,27,50,0.18)",
-  frameShadow: "rgba(16,27,50,0.25)",
-  leftBg: "linear-gradient(155deg, #A3AFC9 0%, #8E9CBB 55%, #7D8CAD 100%)",
-  leftText: NAVY,
-  leftText2: "rgba(16,27,50,0.92)",
-  grid: "rgba(16,27,50,0.09)",
-  glow1: "rgba(199,91,65,0.38)",
-  glow2: "rgba(199,91,65,0.14)",
-  orbit: NAVY,
-  logoBg: NAVY,
-  logoIcon: "#FFFFFF",
-  pillBorder: "#6E2A19",
-  pillBg: "rgba(166,75,53,0.16)",
-  live: "#C75B41",
-  eyebrow: "#6E2A19",
-  highlight:
-    "linear-gradient(100deg,#7A2F1D 0%,#B84A2E 30%,#7A2F1D 50%,#B84A2E 70%,#7A2F1D 100%)",
-  cardBg: "rgba(255,255,255,0.22)",
-  cardBorder: "rgba(16,27,50,0.35)",
-  flow: "rgba(16,27,50,0.5)",
-  chartIcon: NAVY,
-  rightBg: "#9CA9C4",
-  text: NAVY,
-  muted: "#25344F",
-  field: "#B4BED3",
-  border: "#6F7E9F",
-  placeholder: "#566587",
-  link: "#6E2A19",
-  btnBg: TERRACOTTA,
-  btnBorder: "#D9694C",
-  btnShadow: "rgba(166,75,53,0.4)",
-  error: "#8A1F10",
-};
-
-/* Keyframes + helpers (kept here so the page is self-contained) */
-const css = `
-@keyframes am-rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
-@keyframes am-fade{from{opacity:0}to{opacity:1}}
-@keyframes am-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-@keyframes am-spin{to{transform:rotate(360deg)}}
-@keyframes am-spinr{to{transform:rotate(-360deg)}}
-@keyframes am-breathe{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(199,91,65,.45)}50%{transform:scale(1.05);box-shadow:0 0 0 14px rgba(199,91,65,0)}}
-@keyframes am-sheen{0%{transform:translateX(-140%) skewX(-20deg)}55%,100%{transform:translateX(420%) skewX(-20deg)}}
-@keyframes am-ping{0%,100%{box-shadow:0 0 0 0 rgba(32,213,223,.55)}70%{box-shadow:0 0 0 9px rgba(32,213,223,0)}}
-@keyframes am-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
-@keyframes am-flow{to{background-position:-24px 0}}
-@keyframes am-grid{from{background-position:0 0}to{background-position:56px 56px}}
-.am-rise{animation:am-rise .9s cubic-bezier(.2,.7,.2,1) both}
-.am-fade{animation:am-fade 1.6s ease both}
-.am-hl{-webkit-background-clip:text;background-clip:text;color:transparent;background-size:200% 100%;animation:am-shimmer 7s linear infinite}
-.am-spin{transform-box:view-box;transform-origin:180px 180px;animation:am-spin 70s linear infinite}
-.am-spin2{transform-box:view-box;transform-origin:180px 180px;animation:am-spinr 48s linear infinite}
-.am-spin3{transform-box:view-box;transform-origin:180px 180px;animation:am-spin 32s linear infinite}
-.am-core{animation:am-breathe 3.6s ease-in-out infinite}
-.am-fl{animation:am-float 5s ease-in-out infinite}
-.am-fl2{animation:am-float 6.5s ease-in-out infinite;animation-delay:-2s}
-.am-fl3{animation:am-float 5.8s ease-in-out infinite;animation-delay:-3.4s}
-.am-fl4{animation:am-float 5s ease-in-out infinite;animation-delay:-1.5s}
-.am-live{animation:am-ping 2.4s ease-out infinite}
-.am-flow{background-size:24px 1px;animation:am-flow 1.6s linear infinite}
-.am-grid{background-size:56px 56px;animation:am-grid 8s linear infinite;-webkit-mask-image:radial-gradient(ellipse at 60% 70%,#000 0%,transparent 72%);mask-image:radial-gradient(ellipse at 60% 70%,#000 0%,transparent 72%)}
-.am-btn{position:relative;overflow:hidden;transition:filter .3s,transform .3s}
-.am-btn::after{content:"";position:absolute;top:0;left:0;width:30%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.4),transparent);animation:am-sheen 5.5s ease-in-out infinite}
-.am-btn:hover{filter:brightness(1.08);transform:translateY(-2px)}
-.am-input::placeholder{color:var(--am-ph)}
-.am-input:focus{border-color:#20D5DF !important;box-shadow:0 0 0 3px rgba(32,213,223,.25)}
-@media (prefers-reduced-motion: reduce){.am-rise,.am-fade,.am-hl,.am-spin,.am-spin2,.am-spin3,.am-core,.am-fl,.am-fl2,.am-fl3,.am-fl4,.am-live,.am-flow,.am-grid,.am-btn::after{animation:none !important}}
-`;
-
-const delay = (s: number): CSSProperties => ({ animationDelay: `${s}s` });
+const CORAL = "#FF7A59";
 
 export default function AdmindWorkspace() {
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -212,7 +106,7 @@ export default function AdmindWorkspace() {
       className="relative flex min-h-screen w-full flex-col overflow-hidden"
       style={{ background: c.page, ["--am-ph" as string]: c.placeholder } as CSSProperties}
     >
-      <style>{css}</style>
+      <style>{authCss}</style>
 
       {/* Decorative ring */}
       <div
@@ -256,7 +150,7 @@ export default function AdmindWorkspace() {
               }}
             ></div>
 
-            {/* terracotta glow (bottom-right corner) */}
+            {/* coral glow (bottom-right corner) */}
             <div
               aria-hidden="true"
               className="absolute inset-0"
@@ -271,7 +165,7 @@ export default function AdmindWorkspace() {
               viewBox="0 0 360 360"
               className="am-fade pointer-events-none absolute -right-28 -top-24 h-[26rem] w-[26rem] opacity-80"
             >
-              <circle cx="180" cy="180" r="70" fill="none" stroke="#C75B41" strokeOpacity="0.6" />
+              <circle cx="180" cy="180" r="70" fill="none" stroke={CORAL} strokeOpacity="0.6" />
               <circle cx="180" cy="180" r="112" fill="none" stroke={c.orbit} strokeOpacity="0.28" strokeDasharray="2 7" />
               <circle cx="180" cy="180" r="154" fill="none" stroke={c.orbit} strokeOpacity="0.18" />
               <g className="am-spin3"><circle cx="250" cy="180" r="4.5" fill={TURQUOISE} /></g>
@@ -280,7 +174,7 @@ export default function AdmindWorkspace() {
                 <circle cx="180" cy="292" r="3" fill={c.orbit} fillOpacity="0.7" />
               </g>
               <g className="am-spin">
-                <circle cx="334" cy="180" r="5" fill={TERRACOTTA} />
+                <circle cx="334" cy="180" r="5" fill={CORAL} />
                 <circle cx="26" cy="180" r="3" fill={c.orbit} fillOpacity="0.7" />
               </g>
             </svg>
@@ -289,8 +183,8 @@ export default function AdmindWorkspace() {
             <div className="am-rise relative flex items-center justify-between" style={delay(0.1)}>
               <div className="flex items-center gap-3">
                 <div
-                  className="flex h-12 w-12 items-center justify-center rounded-xl shadow-xl"
-                  style={{ background: c.logoBg, boxShadow: `0 10px 24px rgba(0,0,0,0.3), 0 0 0 3px ${TERRACOTTA}` }}
+                  className="flex h-12 w-12 items-center justify-center rounded-xl"
+                  style={{ background: c.logoBg, boxShadow: `0 0 0 1.5px ${CORAL}, 0 0 18px -4px rgba(255,122,89,0.55)` }}
                 >
                   <Icon icon="lucide:brain-circuit" className="text-2xl" style={{ color: c.logoIcon }} />
                 </div>
@@ -299,7 +193,7 @@ export default function AdmindWorkspace() {
 
               <span
                 className="inline-flex items-center gap-2.5 rounded-lg border px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em]"
-                style={{ borderColor: c.pillBorder, background: c.pillBg }}
+                style={{ borderColor: c.pillBorder, background: c.pillBg, boxShadow: "0 0 22px -6px rgba(77,216,255,0.5)" }}
               >
                 <span className="am-live h-[7px] w-[7px] rounded-full" style={{ background: c.live }}></span>
                 Live orchestration
@@ -337,7 +231,7 @@ export default function AdmindWorkspace() {
             {/* Agent Constellation Visual */}
             <div
               className="am-rise relative rounded-xl border p-6"
-              style={{ ...delay(0.8), background: c.cardBg, borderColor: c.cardBorder }}
+              style={{ ...delay(0.8), background: c.cardBg, borderColor: c.cardBorder, boxShadow: "0 0 30px -10px rgba(77,216,255,0.4)" }}
             >
               <div className="mb-4 flex items-center justify-between">
                 <div>
@@ -367,7 +261,7 @@ export default function AdmindWorkspace() {
 
                 <div
                   className="am-core absolute left-1/2 top-1/2 flex h-[72px] w-[72px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 bg-white"
-                  style={{ borderColor: "#C75B41" }}
+                  style={{ borderColor: TURQUOISE }}
                 >
                   <Icon icon="lucide:sparkles" className="text-3xl" style={{ color: NAVY }} />
                 </div>
@@ -381,14 +275,14 @@ export default function AdmindWorkspace() {
 
                 <div
                   className="am-fl2 absolute right-8 top-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg"
-                  style={{ background: "#C75B41" }}
+                  style={{ background: CORAL }}
                 >
                   <Icon icon="lucide:pen-tool" className="text-xl text-white" />
                 </div>
 
                 <div
                   className="am-fl3 absolute bottom-2 left-28 flex h-10 w-10 items-center justify-center rounded-xl border"
-                  style={{ background: "rgba(199,91,65,0.25)", borderColor: "#D9694C" }}
+                  style={{ background: "rgba(255,122,89,0.2)", borderColor: CORAL }}
                 >
                   <Icon icon="lucide:chart-bar" className="text-lg" style={{ color: c.chartIcon }} />
                 </div>
@@ -412,8 +306,8 @@ export default function AdmindWorkspace() {
               {/* Mobile Logo */}
               <div className="mb-10 lg:hidden">
                 <div
-                  className="flex h-12 w-12 items-center justify-center rounded-xl shadow-xl"
-                  style={{ background: c.logoBg, boxShadow: `0 0 0 3px ${TERRACOTTA}` }}
+                  className="flex h-12 w-12 items-center justify-center rounded-xl"
+                  style={{ background: c.logoBg, boxShadow: `0 0 0 1.5px ${CORAL}, 0 0 18px -4px rgba(255,122,89,0.55)` }}
                 >
                   <Icon icon="lucide:brain-circuit" className="text-2xl" style={{ color: c.logoIcon }} />
                 </div>
@@ -424,7 +318,7 @@ export default function AdmindWorkspace() {
                 className="am-rise flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.22em]"
                 style={delay(0.15)}
               >
-                <span className="h-[3px] w-9 rounded" style={{ background: "#C75B41" }}></span>
+                <span className="h-[3px] w-9 rounded" style={{ background: CORAL }}></span>
                 Secure agent access
               </p>
 

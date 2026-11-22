@@ -98,7 +98,11 @@ export const contentApi = {
   schedule: (id: number, body: { scheduled_at: string; social_account_id?: number }) =>
     api<PublishJob>(`/content/${id}/schedule`, { method: "POST", body }),
     update: (id: number, body: { campaign_id: number | null }) => api<unknown>(`/content/${id}`, { method: "PUT", body }),
-};
+   // The AI rewrites the post with the employee's notes (202 + agent_run_id: poll agentApi.run). The post becomes a draft.
+  revise: (id: number, notes: string) => api<{ agent_run_id: number }>(`/content/${id}/revise`, { method: "POST", body: { notes } }),
+  // The person writes the new text by hand (a rare fallback). The post becomes a draft.
+  addVersion: (id: number, body: { body: string; instruction?: string }) => api<unknown>(`/content/${id}/versions`, { method: "POST", body }),
+  };
 
 export const approvalsApi = {
   list: () => api<Approval[]>("/approvals"),

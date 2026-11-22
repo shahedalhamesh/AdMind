@@ -7,6 +7,7 @@ import { usePortalTheme } from "../services/portalTheme";
 import { STATUS_LABEL, contentApi, contentTone, fmtDateTime, isInternalStage, publishApi } from "../services/content";
 import DecisionPanel from "../components/content/DecisionPanel";
 import SchedulePanel from "../components/content/SchedulePanel";
+import RevisePanel from "../components/content/RevisePanel";
 import PublishJobCard, { useRefreshContent } from "../components/content/PublishJobCard";
 import { Badge, Btn, Card, Loading, Notice, errorText } from "../components/Ui";
 import MediaGallery from "../components/content/MediaGallery";
@@ -60,6 +61,9 @@ export default function ContentDetail() {
   const canDecide = !!pendingInternal && can(user, "approvals.respond") && (can(user, "approvals.manage") || pendingInternal.requested_from_id === user?.id);
   const canEditContent = can(user, "content.update");
   const job = (jobs.data?.data ?? []).filter((j) => j.content_id === id)[0];
+  // the reviewer's last request for changes, shown to the person who has to fix the post
+  const managerNote = [...approvals].filter((a) => a.status === "changes_requested" && a.comment).sort((a, b) => b.id - a.id)[0]?.comment ?? null;
+  const canRevise = canEditContent && (item.status === "revision_requested" || item.status === "draft");
 
   return (
     <div>
@@ -79,7 +83,7 @@ export default function ContentDetail() {
         {/* The content itself */}
         <div style={{ display: "grid", gap: 18 }}>
           <Card>
-             <MediaGallery contentId={id} clientId={item.client_id} editable={canEditContent} />
+            <MediaGallery contentId={id} clientId={item.client_id} editable={canEditContent} />
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
               <h3 style={{ margin: 0, fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 500 }}>Text</h3>
               {version && <span style={{ fontSize: 12, color: p.muted }}>Version {version.version_number}{version.language ? ` · ${version.language.toUpperCase()}` : ""}</span>}
@@ -128,7 +132,15 @@ export default function ContentDetail() {
             </Notice>
           )}
 
-          {item.status === "draft" && item.current_version_id && canEditContent && (
+          {item.status === "revision_requested" && (
+            <Notice kind="warning">
+              Changes were requested{managerNote ? `: “${managerNote}”` : "."} Ask the AI to fix the post below, then send it again.
+            </Notice>
+          )}
+
+         {canRevise && <RevisePanel contentId={id} clientId={item.client_id} />}
+
+        {(item.status === "draft" || item.status === "revision_requested") && item.current_version_id && canEditContent && (
             <Card>
               <h3 style={{ margin: 0, fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 500 }}>Send for approval</h3>
               <p style={{ margin: "6px 0 14px", fontSize: 13, opacity: 0.75, lineHeight: 1.5 }}>
@@ -138,10 +150,6 @@ export default function ContentDetail() {
               {submit.isSuccess && <div style={{ marginBottom: 12 }}><Notice kind="success">{submit.data.stage === "internal" ? "Sent to a manager for review." : "Sent to the client."}</Notice></div>}
               <Btn variant="primary" onClick={() => submit.mutate()} disabled={submit.isPending || submit.isSuccess}>{submit.isPending ? "Sending…" : "Send for approval"}</Btn>
             </Card>
-          )}
-
-          {item.status === "revision_requested" && (
-            <Notice kind="warning">Changes were requested. The team updates the text, then sends it again.</Notice>
           )}
 
           {item.status === "approved" && canEditContent && <SchedulePanel item={item} />}

@@ -1,20 +1,26 @@
 import { useEffect, useState } from "react";
 
 export const LIGHT = {
-  bg: "#A9B5CD", side: "rgba(201,209,224,0.45)", hdr: "rgba(201,209,224,0.55)",
-  card: "#C9D1E0", field: "#B4BED3", border: "#8E9AB4", text: "#101B32", muted: "#25344F",
-  pri: "#A64B35", priB: "#D9694C", priSh: "rgba(166,75,53,0.35)", eyeb: "#6E2A19", link: "#6E2A19",
-  track: "#9CA9C4", iconBg: "#B4BED3", iconFg: "#0E5F68", accf: "#20D5DF", good: "#0B5F3A",
-  chipBg: "rgba(166,75,53,0.16)", chipFg: "#6E2A19", glow: "rgba(199,91,65,0.28)",
-  logoBg: "#101B32", logoIc: "#FFFFFF",
+  bg: "#B4BCC7", side: "rgba(166,175,186,0.85)", hdr: "rgba(198,205,214,0.8)",
+  card: "#C6CDD6", field: "#D3D9E0", border: "#98A2AF", text: "#0F1824", muted: "#3F4A58",
+  pri: "#D9563A", priB: "#E8694B", priSh: "rgba(217,86,58,0.3)", eyeb: "#8F2F1B", link: "#8F2F1B",
+  track: "#AEB7C2", iconBg: "#BBC3CD", iconFg: "#0B5F80", accf: "#1F7FA8", good: "#0F6B49",
+  chipBg: "rgba(217,86,58,0.16)", chipFg: "#8F2F1B", glow: "rgba(217,86,58,0.15)",
+  logoBg: "#0F1824", logoIc: "#FFFFFF",
+  // AI = electric blue
+  ai: "#0A8FD6", ai2: "#0A6FB5", aiBg: "rgba(10,143,214,0.10)", aiBorder: "rgba(10,143,214,0.55)",
+  aiGlow: "rgba(10,143,214,0.28)", aiText: "#0A5F8F", aiOn: "#FFFFFF",
 };
 export const DARK = {
-  bg: "#0B1426", side: "#0D182E", hdr: "rgba(16,27,50,0.6)",
-  card: "#101B32", field: "#16223F", border: "#25365A", text: "#FFFFFF", muted: "#AAB6CE",
-  pri: "#BC553B", priB: "#E58A70", priSh: "rgba(188,85,59,0.4)", eyeb: "#E58A70", link: "#EE9A80",
-  track: "#16223F", iconBg: "#16223F", iconFg: "#20D5DF", accf: "#20D5DF", good: "#4FE3A1",
-  chipBg: "rgba(188,85,59,0.25)", chipFg: "#F0A18A", glow: "rgba(199,91,65,0.22)",
-  logoBg: "#FFFFFF", logoIc: "#101B32",
+  bg: "#0A121C", side: "#08101A", hdr: "rgba(10,18,28,0.7)",
+  card: "#0F1A27", field: "#132133", border: "#1B2A3B", text: "#E8EEF6", muted: "#8FA2B6",
+  pri: "#D9563A", priB: "#FF7A59", priSh: "rgba(255,122,89,0.35)", eyeb: "#FF8F72", link: "#FF8F72",
+  track: "#132133", iconBg: "#132133", iconFg: "#4FB3D9", accf: "#2B93BC", good: "#3FCB8E",
+  chipBg: "rgba(255,122,89,0.14)", chipFg: "#FF9A80", glow: "rgba(255,122,89,0.18)",
+  logoBg: "#E8EEF6", logoIc: "#0A121C",
+  // AI = light neon blue
+  ai: "#4DD8FF", ai2: "#7AE6FF", aiBg: "rgba(77,216,255,0.08)", aiBorder: "rgba(77,216,255,0.55)",
+  aiGlow: "rgba(77,216,255,0.35)", aiText: "#7AE6FF", aiOn: "#031722",
 };
 export type Pal = typeof LIGHT;
 

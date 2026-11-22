@@ -109,3 +109,17 @@ export function homeFor(user: AuthUser): string {
   if (user.client_id) return "/portal";
   return "/dashboard";
 }
+
+// The AI chat is for the Employee only (a product decision): the Owner and the Manager do not use it.
+export function canUseAssistant(user: AuthUser | null): boolean {
+  if (!can(user, "agents.run")) return false;
+  const role = (user?.role ?? "").toLowerCase();
+  return role !== "owner" && role !== "manager";
+}
+
+// Meetings and Recommendations are for the Owner and the Manager only (a product decision).
+export function canUseInsights(user: AuthUser | null): boolean {
+  if (!can(user, "clients.view")) return false;
+  const role = (user?.role ?? "").toLowerCase();
+  return role === "owner" || role === "manager";
+}

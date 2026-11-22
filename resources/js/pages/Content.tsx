@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../components/AuthContext";
-import { can } from "../services/auth";
+import { can, canUseAssistant } from "../services/auth";
 import { usePortalTheme } from "../services/portalTheme";
 import { clientsApi } from "../services/clients";
 import { CONTENT_PLATFORMS, CONTENT_STATUSES, CONTENT_TYPES, STATUS_LABEL, contentApi, contentTone, publishApi } from "../services/content";
 import PublishJobCard from "../components/content/PublishJobCard";
+import AiStudio from "../components/content/AiStudio";
 import { Badge, Btn, Loading, Notice, Select, errorText } from "../components/Ui";
 
 type Tab = "content" | "scheduled";
@@ -20,15 +21,33 @@ const JOB_FILTERS = [
 export default function Content() {
   const { p } = usePortalTheme();
   const { user } = useAuth();
+  const [params] = useSearchParams();
+  const allowAi = canUseAssistant(user);
   const [tab, setTab] = useState<Tab>("content");
+  const [studio, setStudio] = useState(allowAi && params.get("ai") === "1");
 
   const clients = useQuery({ queryKey: ["clients", { q: "", status: "" }], queryFn: () => clientsApi.list({}), enabled: can(user, "clients.view") });
   const clientName = useMemo(() => new Map((clients.data ?? []).map((c) => [c.id, c.name])), [clients.data]);
 
   return (
     <div>
-      <p style={{ margin: 0, fontFamily: "ui-monospace, monospace", fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", color: p.eyeb }}>Content</p>
-      <h1 style={{ margin: "10px 0 0", fontFamily: "Georgia, serif", fontSize: 38, fontWeight: 500 }}>Content</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <p style={{ margin: 0, fontFamily: "ui-monospace, monospace", fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", color: p.eyeb }}>Content</p>
+          <h1 style={{ margin: "10px 0 0", fontFamily: "Georgia, serif", fontSize: 38, fontWeight: 500 }}>Content</h1>
+        </div>        {allowAi && !studio && (
+          <button type="button" className="ai-button ai-button-solid" onClick={() => setStudio(true)} style={{ padding: "11px 20px", fontSize: 14, cursor: "pointer" }}>
+            ✦ Create with AI
+          </button>
+        )}
+
+      </div>
+
+      {allowAi && studio && (
+        <div style={{ marginTop: 22 }}>
+          <AiStudio clients={clients.data ?? []} onClose={() => setStudio(false)} />
+        </div>
+      )}
 
       <div role="tablist" style={{ display: "flex", gap: 6, margin: "24px 0 20px", borderBottom: `1px solid ${p.border}` }}>
         {([["content", "All content"], ["scheduled", "Scheduled posts"]] as [Tab, string][]).map(([id, label]) => (

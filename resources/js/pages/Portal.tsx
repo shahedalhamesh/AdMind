@@ -3,11 +3,13 @@ import { Link, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../components/AuthContext";
+import { can } from "../services/auth";
 import { usePortalTheme } from "../services/portalTheme";
 import { approvalsApi, fmtDateTime } from "../services/content";
 import type { Approval } from "../services/content";
 import { reportsApi } from "../services/reports";
 import { ReportBody } from "./Reports";
+import ClientRequests from "../components/portal/ClientRequests";
 import { Badge, Btn, Loading, Modal, Notice, errorText } from "../components/Ui";
 
 const DECIDED: Record<string, string> = { approved: "You approved", rejected: "You rejected", changes_requested: "You asked for changes" };
@@ -34,10 +36,11 @@ export function PortalShell({ children }: { children: ReactNode }) {
   );
 }
 
-type Tab = "review" | "done" | "reports";
+type Tab = "review" | "done" | "reports" | "requests";
 
 export default function Portal() {
   const { p } = usePortalTheme();
+  const { user } = useAuth();
   const [tab, setTab] = useState<Tab>("review");
   const [openReport, setOpenReport] = useState<number | null>(null);
 
@@ -71,6 +74,7 @@ export default function Portal() {
   };
 
   const tabs: [Tab, string][] = [["review", `To review (${review.length})`], ["done", `Decided (${done.length})`], ["reports", `Reports (${sharedReports.length})`]];
+  if (can(user, "requests.create")) tabs.push(["requests", "My requests"]);
 
   return (
     <PortalShell>
@@ -86,7 +90,7 @@ export default function Portal() {
         ))}
       </div>
 
-      {tab !== "reports" && (
+      {(tab === "review" || tab === "done") && (
         <>
           {list.isLoading && <Loading />}
           {list.isError && <Notice kind="error">{errorText(list.error)}</Notice>}
@@ -116,6 +120,8 @@ export default function Portal() {
           </div>
         </>
       )}
+
+      {tab === "requests" && <ClientRequests />}
 
       {openReport !== null && <SharedReport id={openReport} onClose={() => setOpenReport(null)} />}
     </PortalShell>

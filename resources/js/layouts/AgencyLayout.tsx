@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { can } from "../services/auth";
+import { can, canUseAssistant, canUseInsights } from "../services/auth";
 import { useAuth } from "../components/AuthContext";
 import { usePortalTheme } from "../services/portalTheme";
 import LangToggle from "../components/LangToggle";
@@ -24,8 +24,8 @@ const MAIN: NavItem[] = [
   { to: "/dashboard", label: "Home", icon: "home", built: true },
   { to: "/clients", label: "Clients", icon: "users", built: true, perm: "clients.view" },
   { to: "/team", label: "Team", icon: "team", built: true, perm: "users.view" },
-  { to: "/assistant", label: "AI Assistant", icon: "ai", built: true, perm: "agents.run" },
   { to: "/content", label: "Content", icon: "content", built: true, perm: "content.view" },
+  { to: "/media", label: "Media", icon: "content", built: true, perm: "content.view" },
   { to: "/approvals", label: "Approvals", icon: "ok", built: true, perm: "approvals.respond" },
 ];
 const SOON: NavItem[] = [
@@ -33,7 +33,10 @@ const SOON: NavItem[] = [
   { to: "/campaigns", label: "Campaigns", icon: "mega", built: true, perm: "campaigns.view" },
   { to: "/reports", label: "Reports", icon: "chart", built: true, perm: "reports.view" },
   { to: "/meetings", label: "Meetings", icon: "content", built: true, perm: "clients.view" },
+  { to: "/team/access", label: "Join requests", icon: "team", built: true, perm: "users.create" },
   { to: "/recommendations", label: "Recommendations", icon: "ok", built: true, perm: "clients.view" },
+  { to: "/requests", label: "Requests", icon: "ok", built: true, perm: "clients.view" },
+  { to: "/publishing", label: "Publishing", icon: "task", built: true, perm: "content.view" },
 ];
 
 export default function AgencyLayout() {
@@ -55,7 +58,12 @@ export default function AgencyLayout() {
   };
 
   // Show only what this person is allowed to use.
-  const visible = (it: NavItem) => !it.perm || can(user, it.perm);
+  // The AI chat is for the Employee only. Meetings and Recommendations are for the Owner and the Manager only.
+  const visible = (it: NavItem) =>
+    (!it.perm || can(user, it.perm)) &&
+    (it.to !== "/assistant" || canUseAssistant(user)) &&
+    (!["/content", "/media"].includes(it.to) || !canUseInsights(user)) &&
+    (!["/meetings", "/recommendations"].includes(it.to) || canUseInsights(user));
   const mainItems = MAIN.filter(visible);
   const soonItems = SOON.filter(visible);
 
@@ -64,7 +72,7 @@ export default function AgencyLayout() {
   );
 
   const renderItem = (it: NavItem) => {
-    const base: React.CSSProperties = { display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 10, fontSize: 14, textDecoration: "none" };
+    const base: React.CSSProperties = { position: "relative", display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 10, fontSize: 14, textDecoration: "none" };
     if (!it.built) {
       return (
         <div key={it.to} aria-disabled title="Coming soon"
@@ -76,8 +84,16 @@ export default function AgencyLayout() {
     }
     return (
       <NavLink key={it.to} to={it.to}
-        style={({ isActive }) => ({ ...base, fontWeight: isActive ? 600 : 500, background: isActive ? p.pri : "transparent", color: isActive ? "#fff" : p.text })}>
-        <Svg name={it.icon} />{it.label}
+        style={({ isActive }) => ({ ...base, fontWeight: isActive ? 600 : 500, background: isActive ? p.field : "transparent", color: p.text })}>
+        {({ isActive }) => (
+          <>
+            {isActive && (
+              <span aria-hidden style={{ position: "absolute", insetInlineStart: 0, top: 9, bottom: 9, width: 3, borderRadius: 3, background: p.priB, boxShadow: `0 0 10px ${p.priSh}` }} />
+            )}
+            <span style={{ display: "flex", color: isActive ? p.priB : "inherit" }}><Svg name={it.icon} /></span>
+            {it.label}
+          </>
+        )}
       </NavLink>
     );
   };
@@ -95,7 +111,7 @@ export default function AgencyLayout() {
       {/* Sidebar */}
       <aside className="pl-side" style={{ background: p.side, borderInlineEnd: `1px solid ${p.border}`, padding: "22px 16px", display: "flex", flexDirection: "column", boxSizing: "border-box", position: "sticky", top: 0, height: "100vh" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 8px 22px" }}>
-          <div style={{ width: 42, height: 42, borderRadius: 12, background: p.logoBg, boxShadow: "0 0 0 3px #A64B35", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ width: 42, height: 42, borderRadius: 12, background: p.logoBg, boxShadow: `0 0 0 1.5px ${p.priB}, 0 0 18px -4px ${p.priSh}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={p.logoIc} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" /><path d="M9 13a4.5 4.5 0 0 0 3-4" /><path d="M12 13h4" /><path d="M12 8h8" /></svg>
           </div>
           <div style={{ fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 600, letterSpacing: ".14em" }}>ADMIND</div>
@@ -114,8 +130,9 @@ export default function AgencyLayout() {
         </div>
 
         <div style={{ flexShrink: 0, padding: 14, borderRadius: 14, border: `1px solid ${p.border}`, background: p.card }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 40, height: 40, borderRadius: "50%", background: "linear-gradient(135deg,#C75B41,#A64B35)", color: "#fff", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initials}</div>
+          <div role="link" tabIndex={0} title="My account" onClick={() => navigate("/profile")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/profile"); }}
+            style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
+            <div style={{ width: 40, height: 40, borderRadius: "50%", background: `linear-gradient(135deg, ${p.priB}, ${p.pri})`, color: "#fff", fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initials}</div>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user?.name ?? "User"}</div>
               <div style={{ fontSize: 12, color: p.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{[user?.role, agency].filter(Boolean).join(" · ")}</div>
@@ -128,7 +145,7 @@ export default function AgencyLayout() {
 
       {/* Main */}
       <div style={{ position: "relative", display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <div aria-hidden style={{ position: "absolute", inset: "0 0 auto 0", height: 400, background: `radial-gradient(ellipse at 85% -20%, ${p.glow} 0%, transparent 60%)`, pointerEvents: "none" }} />
+        <div aria-hidden style={{ position: "absolute", inset: "0 0 auto 0", height: 400, background: `radial-gradient(ellipse at 85% -20%, ${dark ? "rgba(43,147,188,0.14)" : "rgba(43,147,188,0.08)"} 0%, transparent 60%)`, pointerEvents: "none" }} />
         <header style={{ position: "sticky", top: 0, zIndex: 10, height: 72, boxSizing: "border-box", padding: "0 36px", display: "flex", alignItems: "center", gap: 14, borderBottom: `1px solid ${p.border}`, background: p.hdr, backdropFilter: "blur(10px)" }}>
           <label style={{ width: 380, maxWidth: "50%", height: 42, boxSizing: "border-box", display: "flex", alignItems: "center", gap: 10, padding: "0 14px", borderRadius: 10, border: `1px solid ${p.border}`, background: p.card, color: p.muted, fontSize: 14 }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>

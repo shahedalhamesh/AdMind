@@ -41,7 +41,7 @@ export default function NotificationsPanel({ limit = 5, unreadOnly = false }: { 
       {list.isLoading && <Loading />}
       {list.isError && <Notice kind="error">{errorText(list.error)}</Notice>}
      {list.isSuccess && items.length === 0 && <p style={{ margin: 0, fontSize: 14, color: p.muted }}>Nothing here.</p>}
-      <div style={{ display: "grid", gap: 10 }}>
+           <div style={{ display: "grid", gap: 10, maxHeight: 420, overflowY: "auto", paddingInlineEnd: 4 }}>
         {items.map((n) => {
           const unreadItem = !n.read_at;
           const clickable = !!notificationTarget(n);

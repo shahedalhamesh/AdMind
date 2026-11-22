@@ -50,8 +50,8 @@ export default function EmployeeHome() {
       <h1 style={{ margin: "10px 0 0", fontFamily: "Georgia, serif", fontSize: 40, fontWeight: 500 }}>{greeting}, {first}.</h1>
 
       {can(user, "agents.run") && (
-        <Link to="/assistant" style={{ display: "inline-block", marginTop: 18, padding: "12px 20px", borderRadius: 12, background: p.pri, color: "#fff", fontSize: 14, fontWeight: 600, textDecoration: "none" }}>
-          Ask the AI to write content →
+        <Link to="/assistant" className="ai-button" style={{ marginTop: 18, padding: "12px 20px", borderRadius: 12, fontSize: 14, textDecoration: "none" }}>
+          ✦ Ask the AI to write content →
         </Link>
       )}
 
