@@ -10,6 +10,7 @@ use App\Models\Client;
 use App\Models\Meeting;
 use App\Models\MeetingActionItem;
 use App\Models\User;
+use App\Services\StuckWork;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -140,6 +141,8 @@ class MeetingController extends Controller
         $meeting = Meeting::findOrFail($id);
         abort_unless($meeting->client_id, 422, 'The meeting needs a client.');
         abort_if(blank($meeting->transcript), 422, 'The meeting has no transcript.');
+        StuckWork::sweepThrottled();
+        $meeting->refresh();
         abort_if($meeting->status === 'processing', 422, 'The AI is already working on this meeting.');
 
         $client = Client::findOrFail($meeting->client_id);

@@ -21,19 +21,28 @@ _jobs: dict[str, dict] = {}  # in memory, lost on restart
 _lock = threading.Lock()
 
 # Added to every motion prompt: the video model animates the first image.
-MOTION_SAFETY = " Calm, smooth, gentle motion. Family-friendly and modest."
+MOTION_SAFETY = (" Natural, realistic, believable motion like real footage filmed by a person. "
+                 "Family-friendly and modest: any people are fully and modestly clothed in everyday clothes.")
 
 PLAN_PROMPT = """You plan a short social media reel from an employee's request
 (the request may be in Arabic or English). Return ONLY one JSON object with
 exactly these keys:
 - "image_prompt": ONE English paragraph (max 70 words) describing the first
   image concretely: subject, setting, composition, lighting, colors, style.
-  No text, letters, logos or watermarks in the image. No real people's names
-  or brand names. Follow the client's brand tone and 'avoid' list. Do not
-  invent product details.
-- "motion_prompt": a short English phrase for how the scene moves (camera and
-  subject motion). Slow and calm, for example a gentle camera pan or ripples
-  on water.
+  Make it look like a natural, realistic, candid photo taken by a real
+  photographer, not a stiff render: a believable lifestyle moment around the
+  product, with natural details (condensation, ice, soft shadows, real textures).
+  A person or a hand may appear when it fits (for example someone enjoying the
+  drink), but always modestly dressed (see SAFETY). No text, letters, logos or
+  watermarks in the image. No real people's names or brand names. Follow the
+  client's brand tone and 'avoid' list. Do not invent product details.
+- "motion_prompt": a short English phrase for how the scene moves, like real
+  footage filmed by a person: natural, believable, physically sensible motion
+  that matches the first image. Use only things that fit the image: a slow
+  camera push-in or gentle handheld drift, ice shifting, condensation, steam,
+  light shimmering, water rippling, leaves swaying, a person or a hand lifting
+  or holding the product naturally. Never an impossible or absurd action (no
+  pouring from a camera or other wrong objects, no objects morphing). Slow and calm.
 - "voice": "female" if the request asks for a woman's/girl's voice, "male" if
   it asks for a man's voice, otherwise "none".
 - "music": a short English description of the music style if the request asks
@@ -44,12 +53,13 @@ Add voice or music ONLY if the request asks for it.
 
 SAFETY (mandatory, whatever the request says): the reel must be family-friendly
 and modest, suitable for a conservative Arabic audience. NEVER describe nudity,
-swimwear, bikinis, bare skin, revealing or tight clothing, suggestive poses or
-romantic/sensual scenes. For places such as pools, beaches, gyms or spas show the
-calm place itself (water, architecture, loungers, plants, light, reflections). If
-people are needed, keep them few, far away or seen from behind, fully clothed in
-ordinary everyday clothes, with no close-ups of bodies. Never write that people
-swim, undress or pose.
+swimwear, bikinis, bare skin beyond hands and face, revealing or tight clothing,
+suggestive poses or romantic/sensual scenes. People may appear naturally (hands,
+a person drinking or sitting at a table, a family), but always fully and modestly
+clothed in ordinary everyday clothes that cover shoulders, arms and legs (a
+headscarf is fine), with no close-ups of bodies. For pools, beaches, gyms or spas
+show people only dressed in everyday clothes, never in swimwear, and never write
+that people swim, undress or pose.
 
 Client profile:
 {profile}
@@ -66,6 +76,11 @@ def _parse_json(text: str) -> dict:
     return json.loads(m.group(0))
 
 
+_VOICE_RE = re.compile(r"voice\s*-?over|voice|narrat|speak|talking|\u0635\u0648\u062a|\u062a\u0639\u0644\u064a\u0642|\u0631\u0627\u0648\u064a", re.I)
+_MALE_RE = re.compile(r"\b(man|male|men|boy)\b|\bman's|\u0631\u062c\u0644|\u0634\u0627\u0628", re.I)
+_MUSIC_RE = re.compile(r"music|soundtrack|\u0645\u0648\u0633\u064a\u0642", re.I)
+
+
 def plan_reel(request: str, profile: object) -> dict:
     raw = llm.call(
         [{"role": "user", "content": PLAN_PROMPT.format(
@@ -78,6 +93,11 @@ def plan_reel(request: str, profile: object) -> dict:
         seconds = float(data.get("seconds") or 7)
     except (TypeError, ValueError):
         seconds = 7.0
+    # The planner sometimes misses an explicit request: fall back to the words of the request itself.
+    if voice not in ("male", "female") and _VOICE_RE.search(request):
+        voice = "male" if _MALE_RE.search(request) else "female"
+    if music.lower() in ("", "none", "null") and _MUSIC_RE.search(request):
+        music = "calm, warm, light background music"
     return {
         # the fixed safety wording is added even if the planner ignored the rules
         "image_prompt": with_safety(str(data.get("image_prompt") or request)),
@@ -86,6 +106,16 @@ def plan_reel(request: str, profile: object) -> dict:
         "music": "" if music.lower() in ("", "none", "null") else music[:200],
         "seconds": max(3.5, min(seconds, 21.0)),
     }
+
+
+def _fallback_script(request: str, language: str, budget: int) -> str:
+    """A short neutral line built only from the employee's own words (no invented facts)."""
+    topic = " ".join(request.split())[:120].rstrip(".")
+    if media.is_arabic(language):
+        text = f"{topic}. ندعوكم لزيارتنا وتجربة الفرق بأنفسكم."
+    else:
+        text = f"{topic}. Come visit us and see the difference for yourself."
+    return " ".join(text.split()[: max(budget, 5)])
 
 
 def write_script(company_id: int, client_id: int, request: str,
@@ -108,9 +138,11 @@ def write_script(company_id: int, client_id: int, request: str,
             "headings, no hashtags, NO emojis or symbols, no stage directions, no quotation "
             "marks); natural for a human narrator to say aloud, in everyday "
             "wording (no rare or invented words); modest, family-friendly and "
-            "respectful wording only; use only facts from "
-            "the client profile and the reference material. Output only the spoken "
-            "text."
+            "respectful wording only. Use facts from the request, the client profile and "
+            "the reference material. If specific details (prices, dates, names, offers) "
+            "are not given, do NOT invent them and do NOT ask for them: write a short, "
+            "warm, general invitation based only on the request itself. Never write a "
+            "note or a question; output only the spoken text."
         )
         result = run_with_retry(
             task, ctx.feedback, language,
@@ -118,9 +150,15 @@ def write_script(company_id: int, client_id: int, request: str,
         )
         draft = str(result).strip().strip('"').strip()
         if draft.lower().startswith("note to employee"):
-            raise RuntimeError(draft)  # something is missing; the employee must add it
+            # The agent asked for more details. A reel needs a script, so use a safe general line
+            # that only repeats the request, never invented facts.
+            draft = _fallback_script(request, language, budget)
+            return draft
         output, _verification = verify.check(draft, request, ctx.profile, ctx.knowledge)
-        return str(output).strip()
+        out = str(output).strip()
+        if out.lower().startswith("note to employee"):
+            return _fallback_script(request, language, budget)
+        return out
     finally:
         tools.reset_context(token)
 

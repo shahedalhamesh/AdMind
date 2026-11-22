@@ -9,14 +9,17 @@ use App\Models\Campaign;
 use App\Models\Client;
 use App\Models\ContentItem;
 use App\Models\ContentVersion;
+use App\Models\MediaAsset;
 use App\Models\Task;
 use App\Models\User;
 use App\Jobs\SendAiFeedback;
 use App\Services\ContentService;
+use App\Services\StuckWork;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
@@ -61,24 +64,30 @@ class ContentController extends Controller
     }
 
     /**
-     * Create a content item with its first version. Send `body` (written by the employee), or
-     * `agent_run_id` to use the output of a finished AI run as the first version.
+     * Create a content item with its first version. Send one of:
+     *  - `body` (or `caption`): the text written by the employee,
+     *  - `agent_run_id`: use the output of a finished AI run as the first version,
+     *  - `media_id`: start a post from a ready image or video of the same client (caption optional).
+     * With `media_id`, `type` (image -> post, video -> reel), `platform` (instagram) and `title` (from the
+     * caption) are filled in when not sent, and the media is attached to the new item.
      */
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
             'client_id' => ['required', 'integer'],
-            'type' => ['required', Rule::in(self::TYPES)],
-            'platform' => ['required', Rule::in(self::PLATFORMS)],
-            'title' => ['required', 'string', 'max:255'],
+            'type' => ['required_without:media_id', 'nullable', Rule::in(self::TYPES)],
+            'platform' => ['required_without:media_id', 'nullable', Rule::in(self::PLATFORMS)],
+            'title' => ['required_without:media_id', 'nullable', 'string', 'max:255'],
             'language' => ['nullable', Rule::in(['ar', 'en'])],
-            'body' => ['required_without:agent_run_id', 'nullable', 'string'],
+            'body' => ['required_without_all:agent_run_id,media_id,caption', 'nullable', 'string'],
+            'caption' => ['nullable', 'string'],
             'hashtags' => ['nullable', 'array'],
             'hashtags.*' => ['string'],
             'script' => ['nullable', 'string'],
             'campaign_id' => ['nullable', 'integer'],
             'task_id' => ['nullable', 'integer'],
             'agent_run_id' => ['nullable', 'integer'],
+            'media_id' => ['nullable', 'integer'],
         ]);
 
         $user = $request->user();
@@ -98,18 +107,33 @@ class ContentController extends Controller
                 ->findOrFail($data['agent_run_id']);
         }
 
-        $body = $data['body'] ?? $run->output;
-        $fromAgent = empty($data['body']) && $run !== null;
+        $media = null;
+        if (! empty($data['media_id'])) {
+            $media = MediaAsset::where('client_id', $client->id)->where('status', 'ready')
+                ->findOrFail($data['media_id']);
+            abort_if($media->type === 'audio', 422, 'An audio file cannot start a post.');
+        }
 
-        $item = DB::transaction(function () use ($data, $client, $user, $run, $body, $fromAgent) {
+        $text = $data['body'] ?? $data['caption'] ?? null;
+        $fromAgent = blank($text) && $run !== null;
+        $body = $fromAgent ? (string) $run->output : (string) ($text ?? '');
+
+        $type = $data['type'] ?? ($media?->type === 'video' ? 'reel' : 'post');
+        $platform = $data['platform'] ?? 'instagram';
+        $title = $data['title'] ?? (filled($body)
+            ? Str::limit(trim((string) preg_replace('/\s+/u', ' ', $body)), 60)
+            : 'AI ' . ($media?->type ?? 'post'));
+        $language = $data['language'] ?? (filled($body) ? ContentService::detectLanguage($body) : 'ar');
+
+        $item = DB::transaction(function () use ($data, $client, $user, $run, $media, $body, $fromAgent, $type, $platform, $title, $language) {
             $item = ContentItem::forceCreate([
                 'company_id' => $client->company_id,
                 'client_id' => $client->id,
                 'campaign_id' => $data['campaign_id'] ?? null,
                 'task_id' => $data['task_id'] ?? null,
-                'type' => $data['type'],
-                'platform' => $data['platform'],
-                'title' => $data['title'],
+                'type' => $type,
+                'platform' => $platform,
+                'title' => $title,
                 'status' => 'draft',
                 'created_by_type' => 'user',
                 'created_by_id' => $user->id,
@@ -119,13 +143,17 @@ class ContentController extends Controller
 
             $version = ContentService::createVersion($item, [
                 'body' => $body,
-                'language' => $data['language'] ?? ContentService::detectLanguage($body),
+                'language' => $language,
                 'hashtags' => $data['hashtags'] ?? [],
                 'script' => $data['script'] ?? null,
                 'instruction' => null,
             ], $fromAgent ? 'agent' : 'user', $fromAgent ? null : $user->id, $run?->id);
 
             $item->forceFill(['current_version_id' => $version->id])->save();
+
+            if ($media) {
+                $item->mediaAssets()->syncWithoutDetaching([$media->id => ['position' => 0]]);
+            }
 
             return $item;
         });
@@ -202,19 +230,30 @@ class ContentController extends Controller
      * (internal review); the client sees nothing yet. A Manager or Owner sends it straight to the client
      * (stage 2): by default to the client's own login, else to the client's responsible employee;
      * `requested_from_id` (optional) overrides the approver.
+     * A content with status revision_requested can be sent again directly: it goes back to draft and is sent.
      */
     public function submit(Request $request, int $id): JsonResponse
     {
         $item = ContentItem::findOrFail($id);
-        abort_unless($item->status === 'draft' && $item->current_version_id, 422, 'Only a draft with a version can be submitted.');
+        abort_unless(
+            in_array($item->status, ['draft', 'revision_requested'], true) && $item->current_version_id,
+            422,
+            'Only a draft (or content with requested changes) that has a version can be submitted.'
+        );
 
         $data = $request->validate(['requested_from_id' => ['nullable', 'integer']]);
 
         $internal = ! $request->user()->hasPermission('approvals.manage');
 
-        $approval = DB::transaction(fn () => $internal
-            ? ContentService::requestInternalReview($item, $request->user()->id)
-            : ContentService::requestClientApproval($item, $data['requested_from_id'] ?? null, $request->user()->id));
+        $approval = DB::transaction(function () use ($item, $internal, $request, $data) {
+            if ($item->status === 'revision_requested') {
+                $item->forceFill(['status' => 'draft'])->save();
+            }
+
+            return $internal
+                ? ContentService::requestInternalReview($item, $request->user()->id)
+                : ContentService::requestClientApproval($item, $data['requested_from_id'] ?? null, $request->user()->id);
+        });
 
         return response()->json([
             'stage' => $internal ? 'internal' : 'client',
@@ -238,6 +277,7 @@ class ContentController extends Controller
 
         $data = $request->validate(['notes' => ['required', 'string', 'max:4000']]);
 
+        StuckWork::sweepThrottled();
         $busy = AgentRun::where('status', 'running')->where('client_id', $item->client_id)
             ->where('input->content_id', $item->id)->exists();
         abort_if($busy, 422, 'The AI is already working on this content.');

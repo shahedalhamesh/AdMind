@@ -10,6 +10,7 @@ use App\Models\TaskDependency;
 use App\Models\AgentRun;
 use App\Jobs\RunAgentRequest;
 use App\Models\User;
+use App\Services\StuckWork;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -201,6 +202,7 @@ class TaskController extends Controller
             ->whereIn('depends_on_task_id', Task::where('status', '!=', 'completed')->select('id'))->exists();
         abort_if($blocked, 422, 'This task is blocked by unfinished tasks.');
 
+        StuckWork::sweepThrottled();
         abort_if(AgentRun::where('task_id', $task->id)->where('status', 'running')->exists(), 422,
             'The AI is already working on this task.');
 

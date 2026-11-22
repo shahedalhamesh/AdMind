@@ -8,7 +8,9 @@ use App\Models\AgentRun;
 use App\Models\Client;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Services\AiService;
 use App\Services\ContentService;
+use App\Services\StuckWork;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -81,9 +83,18 @@ class AgentController extends Controller
         return response()->json(['agent_run_id' => $run->id, 'status' => 'running'], 202);
     }
 
+    /**
+     * Poll this while status is running. Besides the result it tells which agent is working now
+     * (`current_agent`), how long it runs (`elapsed_seconds`) and what happened so far (`events`, in order):
+     * each event is {n, time, agent, label, detail}, for example "Agent Started", "Tool Execution Completed",
+     * "Agent Final Answer". While running they come live from the AI service; after the run they are read
+     * from the database. A run stuck for more than 10 minutes is marked failed here, so the polling ends.
+     */
     public function show(int $id): JsonResponse
     {
+        StuckWork::sweepThrottled();
         $run = AgentRun::findOrFail($id);
+        [$current, $events] = $this->progress($run);
 
         return response()->json([
             'id' => $run->id,
@@ -99,6 +110,9 @@ class AgentController extends Controller
             'error' => $run->error,
             'started_at' => $run->started_at,
             'finished_at' => $run->finished_at,
+            'current_agent' => $current,
+            'elapsed_seconds' => $run->started_at->diffInSeconds($run->finished_at ?? now()),
+            'events' => $events,
         ]);
     }
 
@@ -110,6 +124,30 @@ class AgentController extends Controller
             $conversation->messages()->orderBy('id')
                 ->get(['id', 'sender_type', 'sender_agent', 'content', 'created_at'])
         );
+    }
+
+    /** [current agent, events]: live from the AI service while running, from agent_run_steps afterwards. */
+    private function progress(AgentRun $run): array
+    {
+        if ($run->status === 'running') {
+            try {
+                $live = app(AiService::class)->runEvents($run->company_id, $run->id);
+
+                return [$live['current_agent'] ?? $run->agent, array_values((array) ($live['events'] ?? []))];
+            } catch (\Throwable) {
+                return [$run->agent, []]; // the AI service is busy or down: no progress, the run itself is unaffected
+            }
+        }
+
+        $events = $run->agentRunSteps()->orderBy('step_order')->get()->map(fn ($s) => [
+            'n' => $s->step_order,
+            'time' => $s->started_at,
+            'agent' => $s->agent,
+            'label' => $s->action,
+            'detail' => $s->output,
+        ])->values()->all();
+
+        return [null, $events];
     }
 
     private function startRun(int $companyId, int $clientId, string $mode, array $data, ?int $conversationId): AgentRun

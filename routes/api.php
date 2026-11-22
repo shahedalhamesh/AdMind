@@ -2,10 +2,16 @@
 
 use App\Http\Controllers\Api\AdminCompanyController;
 use App\Http\Controllers\Api\AgentController;
+use App\Http\Controllers\Api\AgentPerformanceController;
+use App\Http\Controllers\Api\AiPolicyController;
+use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\ApprovalController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CampaignController;
 use App\Http\Controllers\Api\ClientController;
+use App\Http\Controllers\Api\ClientInteractionController;
+use App\Http\Controllers\Api\ContractController;
+use App\Http\Controllers\Api\SatisfactionController;
 use App\Http\Controllers\Api\ClientRequestController;
 use App\Http\Controllers\Api\ClientDocumentController;
 use App\Http\Controllers\Api\ClientProfileController;
@@ -18,12 +24,16 @@ use App\Http\Controllers\Api\MeetingController;
 use App\Http\Controllers\Api\RecommendationController;
 use App\Http\Controllers\Api\MetricController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\PublicMediaController;
 use App\Http\Controllers\Api\PublishController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SocialAccountController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\TeamJoinController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Middleware\AuditRequests;
+use App\Http\Middleware\BlockPlatformAdminTenantData;
+use App\Http\Middleware\EnforceAiPolicy;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
@@ -36,10 +46,14 @@ Route::get('/team-join/{token}', [TeamJoinController::class, 'preview'])->middle
 Route::post('/team-join/{token}', [TeamJoinController::class, 'submit'])->middleware('throttle:5,1');
 Route::post('/login/google', [AuthController::class, 'loginGoogle'])->middleware('throttle:10,1');
 
+// Temporary signed link that lets Instagram download a media file when publishing (no login, HMAC + expiry).
+Route::get('/public-media/{id}/{exp}/{sig}/{file}', [PublicMediaController::class, 'show'])
+    ->whereNumber(['id', 'exp'])->middleware('throttle:60,1');
+
 // Media files: opened by a signed link (valid 2 hours) so <img>/<video> tags work without a token
 Route::get('/media/{id}/file', [MediaController::class, 'file'])->whereNumber('id')->middleware('signed')->name('media.file');
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', AuditRequests::class, BlockPlatformAdminTenantData::class])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
@@ -61,6 +75,29 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/join-requests/{id}/approve', [TeamJoinController::class, 'approve'])->whereNumber('id')->middleware('permission:users.create');
     Route::post('/join-requests/{id}/reject', [TeamJoinController::class, 'reject'])->whereNumber('id')->middleware('permission:users.create');
 
+    // Interaction history, satisfaction and contracts
+    Route::put('/client-interactions/{id}', [ClientInteractionController::class, 'update'])->whereNumber('id')->middleware('permission:clients.update');
+    Route::delete('/client-interactions/{id}', [ClientInteractionController::class, 'destroy'])->whereNumber('id')->middleware('permission:clients.update');
+    Route::get('/satisfaction/overview', [SatisfactionController::class, 'overview'])->middleware('permission:clients.view');
+    Route::post('/satisfaction', [SatisfactionController::class, 'submit'])->middleware('permission:requests.create');
+    Route::delete('/satisfaction/{id}', [SatisfactionController::class, 'destroy'])->whereNumber('id')->middleware('permission:clients.update');
+    Route::get('/contracts', [ContractController::class, 'index'])->middleware('permission:clients.view');
+    Route::post('/contracts', [ContractController::class, 'store'])->middleware('permission:clients.update');
+    Route::prefix('contracts/{id}')->whereNumber('id')->group(function () {
+        Route::get('/', [ContractController::class, 'show'])->middleware('permission:clients.view');
+        Route::put('/', [ContractController::class, 'update'])->middleware('permission:clients.update');
+        Route::post('/cancel', [ContractController::class, 'cancel'])->middleware('permission:clients.update');
+        Route::delete('/', [ContractController::class, 'destroy'])->middleware('permission:clients.update');
+    });
+
+    // AI policies (how much the AI may do by itself) and the audit trail
+    Route::get('/ai-policies', [AiPolicyController::class, 'index'])->middleware('permission:clients.view');
+    Route::get('/ai-policies/effective', [AiPolicyController::class, 'effective'])->middleware('permission:clients.view');
+    Route::put('/ai-policies', [AiPolicyController::class, 'save'])->middleware('permission:clients.update');
+    Route::delete('/ai-policies/{id}', [AiPolicyController::class, 'destroy'])->whereNumber('id')->middleware('permission:clients.update');
+    Route::get('/agent-performance', [AgentPerformanceController::class, 'index'])->middleware('permission:reports.create');
+    Route::get('/audit-logs', [AuditLogController::class, 'index'])->middleware('permission:audit.view');
+
     // Clients
     Route::get('/clients', [ClientController::class, 'index'])->middleware('permission:clients.view');
     Route::post('/clients', [ClientController::class, 'store'])->middleware('permission:clients.create');
@@ -79,6 +116,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/documents/{documentId}', [ClientDocumentController::class, 'destroy'])
             ->whereNumber('documentId')->middleware('permission:clients.update');
 
+        Route::get('/interactions', [ClientInteractionController::class, 'index'])->middleware('permission:clients.view');
+        Route::post('/interactions', [ClientInteractionController::class, 'store'])->middleware('permission:clients.update');
+        Route::get('/satisfaction', [SatisfactionController::class, 'index'])->middleware('permission:clients.view');
+        Route::post('/satisfaction', [SatisfactionController::class, 'store'])->middleware('permission:clients.update');
+
         Route::get('/social-accounts', [SocialAccountController::class, 'index'])->middleware('permission:clients.view');
         Route::post('/social-accounts', [SocialAccountController::class, 'store'])->middleware('permission:clients.update');
         Route::delete('/social-accounts/{accountId}', [SocialAccountController::class, 'destroy'])
@@ -93,7 +135,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [TaskController::class, 'show'])->middleware('permission:tasks.view');
         Route::put('/', [TaskController::class, 'update'])->middleware('permission:tasks.update');
         Route::delete('/', [TaskController::class, 'destroy'])->middleware('permission:tasks.delete');
-        Route::post('/run', [TaskController::class, 'run'])->middleware('permission:tasks.assign');
+        Route::post('/run', [TaskController::class, 'run'])->middleware(['permission:tasks.assign', EnforceAiPolicy::class]);
         Route::post('/dependencies', [TaskController::class, 'addDependency'])->middleware('permission:tasks.assign');
         Route::delete('/dependencies/{dependsOnId}', [TaskController::class, 'removeDependency'])
             ->whereNumber('dependsOnId')->middleware('permission:tasks.assign');
@@ -126,7 +168,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/', [ContentController::class, 'update'])->middleware('permission:content.update');
         Route::post('/versions', [ContentController::class, 'addVersion'])->middleware('permission:content.update');
         Route::post('/submit', [ContentController::class, 'submit'])->middleware('permission:content.update');
-        Route::post('/revise', [ContentController::class, 'revise'])->middleware('permission:content.update');
+        Route::post('/revise', [ContentController::class, 'revise'])->middleware(['permission:content.update', EnforceAiPolicy::class]);
         Route::post('/schedule', [PublishController::class, 'schedule'])->middleware('permission:content.update');
     });
 
@@ -135,6 +177,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('publish-jobs/{id}')->whereNumber('id')->group(function () {
         Route::put('/', [PublishController::class, 'reschedule'])->middleware('permission:content.update');
         Route::post('/cancel', [PublishController::class, 'cancel'])->middleware('permission:content.update');
+        Route::post('/publish-now', [PublishController::class, 'publishNow'])->middleware('permission:content.update');
         Route::post('/mark-published', [PublishController::class, 'markPublished'])->middleware('permission:content.update');
     });
 
@@ -157,14 +200,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Recommendations (the AI reads the numbers and proposes next actions)
     Route::get('/recommendations', [RecommendationController::class, 'index'])->middleware('permission:clients.view');
-    Route::post('/recommendations/generate', [RecommendationController::class, 'generate'])->middleware('permission:agents.run');
+    Route::post('/recommendations/generate', [RecommendationController::class, 'generate'])->middleware(['permission:agents.run', EnforceAiPolicy::class]);
     Route::post('/recommendations/{id}/accept', [RecommendationController::class, 'accept'])->whereNumber('id')->middleware('permission:tasks.assign');
     Route::post('/recommendations/{id}/dismiss', [RecommendationController::class, 'dismiss'])->whereNumber('id')->middleware('permission:tasks.assign');
 
     // Media library and media of content
     Route::get('/media', [MediaController::class, 'index'])->middleware('permission:content.view');
     Route::post('/media', [MediaController::class, 'store'])->middleware('permission:content.create');
-    Route::post('/media/generate', [MediaController::class, 'generate'])->middleware('permission:content.create');
+    Route::post('/media/generate', [MediaController::class, 'generate'])->middleware(['permission:content.create', EnforceAiPolicy::class]);
     Route::get('/media/{id}', [MediaController::class, 'show'])->whereNumber('id')->middleware('permission:content.view');
     Route::delete('/media/{id}', [MediaController::class, 'destroy'])->whereNumber('id')->middleware('permission:content.update');
     Route::get('/content/{id}/media', [MediaController::class, 'forContent'])->whereNumber('id')->middleware('permission:content.view');
@@ -186,7 +229,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/', [MeetingController::class, 'update'])->middleware('permission:agents.run');
         Route::delete('/', [MeetingController::class, 'destroy'])->middleware('permission:tasks.assign');
         Route::post('/recording', [MeetingController::class, 'uploadRecording'])->middleware('permission:agents.run');
-        Route::post('/summarize', [MeetingController::class, 'summarize'])->middleware('permission:agents.run');
+        Route::post('/summarize', [MeetingController::class, 'summarize'])->middleware(['permission:agents.run', EnforceAiPolicy::class]);
         Route::post('/action-items', [MeetingController::class, 'addActionItem'])->middleware('permission:agents.run');
     });
     Route::prefix('meeting-action-items/{id}')->whereNumber('id')->group(function () {
@@ -206,7 +249,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/notifications/{id}/read', [NotificationController::class, 'read'])->whereNumber('id');
 
     // AI agents
-    Route::middleware('permission:agents.run')->prefix('agent')->group(function () {
+    Route::middleware(['permission:agents.run', EnforceAiPolicy::class])->prefix('agent')->group(function () {
         Route::post('/chat', [AgentController::class, 'chat']);
         Route::post('/run', [AgentController::class, 'run']);
         Route::get('/runs/{id}', [AgentController::class, 'show']);

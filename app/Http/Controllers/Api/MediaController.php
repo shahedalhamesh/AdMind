@@ -7,6 +7,7 @@ use App\Jobs\GenerateMedia;
 use App\Models\Client;
 use App\Models\ContentItem;
 use App\Models\MediaAsset;
+use App\Services\StuckWork;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -44,6 +45,8 @@ class MediaController extends Controller
 
     public function show(int $id): JsonResponse
     {
+        StuckWork::sweepThrottled();
+
         return response()->json($this->present(MediaAsset::findOrFail($id)));
     }
 
@@ -116,6 +119,7 @@ class MediaController extends Controller
             ContentItem::where('client_id', $client->id)->findOrFail($data['content_id']);
         }
 
+        StuckWork::sweepThrottled();
         $busy = MediaAsset::withoutGlobalScopes()->where('source', 'ai_generated')->where('status', 'processing')
             ->where('updated_at', '>', now()->subMinutes(20))->exists();
         abort_if($busy, 429, 'The AI is already creating a file. Try again in a few minutes.');
