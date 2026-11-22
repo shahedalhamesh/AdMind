@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Jobs\PublishPost;
 use App\Models\AiPolicy;
+use App\Models\Approval;
 use App\Models\Client;
 use App\Models\ContentItem;
 use App\Models\PublishJob;
@@ -33,7 +34,8 @@ class AiPolicyService
 
     /**
      * After the client's final approval: with an autonomous policy and publish_rules.auto_publish = true,
-     * schedule the post by itself (at its own scheduled_at if that is in the future, else in 2 minutes).
+     * schedule the post by itself: at its own scheduled_at if that is in the future (the employee chose it),
+     * else at the time the client preferred when approving (preferred_publish_at), else in 2 minutes.
      * Needs automatic publishing to be on (PUBLISH_PROVIDER=simulation or meta). Returns the publish job or null.
      */
     public static function autoSchedule(ContentItem $item): ?PublishJob
@@ -64,7 +66,19 @@ class AiPolicyService
             return null;
         }
 
-        $at = ($item->scheduled_at && $item->scheduled_at->isFuture()) ? $item->scheduled_at : now()->addMinutes(2);
+        $preferred = Approval::withoutGlobalScopes()
+            ->where('company_id', $item->company_id)->where('subject_type', 'content_item')->where('subject_id', $item->id)
+            ->where('status', 'approved')->whereNotNull('preferred_publish_at')
+            ->orderByDesc('id')->value('preferred_publish_at');
+        $preferred = $preferred ? \Illuminate\Support\Carbon::parse($preferred) : null;
+
+        if ($item->scheduled_at && $item->scheduled_at->isFuture()) {
+            $at = $item->scheduled_at;
+        } elseif ($preferred && $preferred->isFuture()) {
+            $at = $preferred;
+        } else {
+            $at = now()->addMinutes(2);
+        }
         $job = DB::transaction(function () use ($item, $account, $at) {
             $job = PublishJob::forceCreate([
                 'company_id' => $item->company_id, 'content_id' => $item->id, 'content_version_id' => $item->current_version_id,

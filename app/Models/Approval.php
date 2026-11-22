@@ -16,6 +16,7 @@ class Approval extends Model
 
     protected $casts = [
         'decided_at' => 'datetime',
+        'preferred_publish_at' => 'datetime',
         'consolidated_at' => 'datetime',
     ];
 

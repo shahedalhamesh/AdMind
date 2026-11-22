@@ -48,12 +48,34 @@ class ContentController extends Controller
             }
         }
 
-        return response()->json($query->paginate(min((int) $request->query('per_page', 20), 100)));
+        $page = $query->paginate(min((int) $request->query('per_page', 20), 100));
+        $times = $this->preferredTimes($page->getCollection()->pluck('id')->all());
+        $page->getCollection()->each(fn ($i) => $i->setAttribute('preferred_publish_at', $times[$i->id] ?? null));
+
+        return response()->json($page);
+    }
+
+    /** The client's preferred publishing time per content id (from the latest approval that has one). */
+    private function preferredTimes(array $ids): array
+    {
+        if (! $ids) {
+            return [];
+        }
+
+        $out = [];
+        foreach (Approval::where('subject_type', 'content_item')->whereIn('subject_id', $ids)
+            ->where('status', 'approved')->whereNotNull('preferred_publish_at')
+            ->orderByDesc('id')->get(['subject_id', 'preferred_publish_at']) as $a) {
+            $out[$a->subject_id] ??= $a->preferred_publish_at;
+        }
+
+        return $out;
     }
 
     public function show(Request $request, int $id): JsonResponse
     {
         $item = $this->visible($request)->with(['currentVersion', 'client:id,name'])->findOrFail($id);
+        $item->setAttribute('preferred_publish_at', $this->preferredTimes([$item->id])[$item->id] ?? null);
 
         return response()->json([
             'content' => $item,

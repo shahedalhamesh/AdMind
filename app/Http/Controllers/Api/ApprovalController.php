@@ -13,6 +13,7 @@ use App\Services\AiPolicyService;
 use App\Services\ContentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
@@ -62,6 +63,8 @@ class ApprovalController extends Controller
         $data = $request->validate([
             'decision' => ['required', Rule::in(['approved', 'rejected', 'changes_requested'])],
             'comment' => ['required_unless:decision,approved', 'nullable', 'string', 'max:2000'],
+            // The client's preferred publishing time (ISO 8601, e.g. 2026-12-01T18:00:00+03:00). Only with "approved".
+            'preferred_publish_at' => ['nullable', 'date', 'after:now', 'prohibited_unless:decision,approved'],
         ]);
 
         $item = ContentItem::findOrFail($approval->subject_id);
@@ -77,10 +80,16 @@ class ApprovalController extends Controller
         $internal = $approval->reason === 'escalation';
         $nextApproval = null;
 
+        // The preferred time is the client's wish: it makes no sense in the internal manager review
+        abort_if($internal && ! empty($data['preferred_publish_at']), 422,
+            'The preferred publishing time can only be set in the client\'s approval.');
+
         DB::transaction(function () use ($approval, $item, $data, &$newStatus, $internal, &$nextApproval) {
             $approval->forceFill([
                 'status' => $data['decision'],
                 'comment' => $data['comment'] ?? null,
+                // convert to UTC first, otherwise the +03:00 offset of the client's time is dropped
+                'preferred_publish_at' => ! empty($data['preferred_publish_at']) ? Carbon::parse($data['preferred_publish_at'])->utc() : null,
                 'decided_at' => now(),
             ])->save();
 
