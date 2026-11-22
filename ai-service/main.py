@@ -4,6 +4,7 @@ import time
 from crewai import Crew, Task, Process
 
 import llm as llm_module
+import run_events
 from agents import (
     main_agent,
     client_agent,
@@ -118,6 +119,7 @@ def run_with_retry(
             )
         except Exception as e:
             print(f"\n[retry] Attempt {attempt}/{MAX_ATTEMPTS} failed: {str(e)[:120]}")
+            run_events.add("retry", "Retrying", None, f"Attempt {attempt}/{MAX_ATTEMPTS} failed: {str(e)[:120]}")
             # A bug in our code won't fix itself: only retry limit/overload errors
             if attempt == MAX_ATTEMPTS or not _is_transient(e):
                 raise

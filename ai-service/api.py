@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from extract import extract_text
 import media
 import memory_manager as mm
+import run_events
 import tools
 import transcribe
 import verify
@@ -50,6 +51,7 @@ def require_key(key: str | None = Security(api_key_header)) -> None:
 
 
 app = FastAPI(title="AdMind AI Service")
+run_events.install()  # live progress of runs (see run_events.py)
 protected = APIRouter(dependencies=[Depends(require_key)])
 
 
@@ -59,6 +61,7 @@ class RunRequest(BaseModel):
     request: str
     language: str = "English"
     past_feedback: str = ""  # optional extra notes, added to what memory returns
+    run_id: str = ""  # backend run id: lets GET /run/{run_id}/events show live progress
 
 
 class ChatRequest(BaseModel):
@@ -67,6 +70,7 @@ class ChatRequest(BaseModel):
     message: str
     conversation_id: str | None = None  # empty = start a new conversation
     language: str = "English"
+    run_id: str = ""  # backend run id: lets GET /run/{run_id}/events show live progress
 
 
 class FeedbackRequest(BaseModel):
@@ -234,6 +238,7 @@ def upload_knowledge(
 
 @protected.post("/run")
 def run(body: RunRequest):
+    rk = run_events.begin(body.company_id, body.run_id)
     ctx = mm.recall(
         body.company_id,
         body.client_id,
@@ -252,17 +257,20 @@ def run(body: RunRequest):
             examples=ctx.examples,
         )
     except Exception as e:
+        run_events.end(rk, "failed")
         raise HTTPException(status_code=502, detail=str(e)[:300])
     finally:
         tools.reset_context(token)
 
     draft = str(result)
+    run_events.add("verifying", "Checking the answer", None, "Comparing it with the profile and documents", rk)
     output, verification = verify.check(
         draft, body.request, ctx.profile, ctx.knowledge
     )
     episode_id = mm.remember_exchange(
         body.company_id, body.client_id, body.request, output
     )
+    run_events.end(rk, "done")
     response = {"episode_id": episode_id, "result": output, "verification": verification}
     if verification == "corrected":
         response["original"] = draft  # what the crew wrote before the fact-check
@@ -271,6 +279,7 @@ def run(body: RunRequest):
 
 @protected.post("/chat")
 def chat(body: ChatRequest):
+    rk = run_events.begin(body.company_id, body.run_id)
     conversation_id = body.conversation_id or uuid.uuid4().hex
     ctx = mm.recall(
         body.company_id,
@@ -290,11 +299,13 @@ def chat(body: ChatRequest):
             ctx.examples,
         )
     except Exception as e:
+        run_events.end(rk, "failed")
         raise HTTPException(status_code=502, detail=str(e)[:300])
     finally:
         tools.reset_context(token)
 
     draft = str(result)
+    run_events.add("verifying", "Checking the answer", None, "Comparing it with the profile and documents", rk)
     output, verification = verify.check(
         draft, body.message, ctx.profile, ctx.knowledge, ctx.history
     )
@@ -302,6 +313,7 @@ def chat(body: ChatRequest):
     episode_id = mm.remember_exchange(
         body.company_id, body.client_id, body.message, output, conversation_id
     )
+    run_events.end(rk, "done")
     response = {
         "conversation_id": conversation_id,
         "episode_id": episode_id,
@@ -311,6 +323,16 @@ def chat(body: ChatRequest):
     if verification == "corrected":
         response["original"] = draft
     return response
+
+
+@protected.get("/run/{run_id}/events")
+def run_progress(run_id: str, company_id: int, since: int = 0):
+    """Live progress of a run started with run_id: current agent and the events after number `since`.
+    known=false when this service has no record of the run (it restarted, or it never ran here)."""
+    data = run_events.get(company_id, run_id, since)
+    if data is None:
+        return {"known": False, "status": None, "current_agent": None, "events": []}
+    return {"known": True, **data}
 
 
 @protected.post("/feedback")

@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\AgentRun;
+use App\Models\AgentRunStep;
 use App\Models\Client;
 use App\Models\ContentItem;
 use App\Models\Meeting;
@@ -13,6 +14,7 @@ use App\Models\User;
 use App\Models\Task;
 use App\Services\AiService;
 use App\Services\ContentService;
+use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -50,9 +52,9 @@ class RunAgentRequest implements ShouldQueue
 
         if ($mode === 'chat') {
             $conversationId = $run->conversation_id ? (string) $run->conversation_id : null;
-            $result = $ai->chat($run->company_id, $run->client_id, $input['message'], $conversationId, $language);
+            $result = $ai->chat($run->company_id, $run->client_id, $input['message'], $conversationId, $language, $run->id);
         } else {
-            $result = $ai->run($run->company_id, $run->client_id, $input['message'], $language);
+            $result = $ai->run($run->company_id, $run->client_id, $input['message'], $language, $run->id);
         }
 
         $verification = $result['verification'] ?? null;
@@ -68,6 +70,8 @@ class RunAgentRequest implements ShouldQueue
             'original_output' => $result['original'] ?? null,
             'finished_at' => now(),
         ])->save();
+
+        $this->storeEvents($run, $ai);
 
         if ($run->conversation_id) {
             Message::forceCreate([
@@ -92,6 +96,37 @@ class RunAgentRequest implements ShouldQueue
             $this->afterMeeting($run);
         } elseif ($mode === 'recommend') {
             $this->afterRecommend($run);
+        }
+    }
+
+    /**
+     * Keep the progress events of the run (Agent Started, Tool Execution Completed...) in agent_run_steps,
+     * so they can still be shown after the AI service forgets them. Never breaks the run.
+     */
+    private function storeEvents(AgentRun $run, AiService $ai): void
+    {
+        try {
+            if (AgentRunStep::where('agent_run_id', $run->id)->exists()) {
+                return;
+            }
+            $events = (array) ($ai->runEvents($run->company_id, $run->id)['events'] ?? []);
+            foreach ($events as $e) {
+                $time = isset($e['time']) ? Carbon::parse($e['time']) : now();
+                AgentRunStep::forceCreate([
+                    'company_id' => $run->company_id,
+                    'agent_run_id' => $run->id,
+                    'step_order' => (int) ($e['n'] ?? 0),
+                    'agent' => $e['agent'] ?? 'system',
+                    'delegated_by' => null,
+                    'action' => (string) ($e['label'] ?? $e['type'] ?? 'event'),
+                    'output' => $e['detail'] ?? null,
+                    'status' => 'succeeded',
+                    'started_at' => $time,
+                    'finished_at' => $time,
+                ]);
+            }
+        } catch (Throwable) {
+            // progress is optional
         }
     }
 
@@ -292,6 +327,9 @@ class RunAgentRequest implements ShouldQueue
         ]);
 
         $run = AgentRun::find($this->agentRunId);
+        if ($run) {
+            $this->storeEvents($run, app(AiService::class));
+        }
         $mode = $run?->input['mode'] ?? null;
         if ($mode === 'meeting') {
             Meeting::whereKey($run->input['meeting_id'] ?? 0)->update(['status' => 'failed']);

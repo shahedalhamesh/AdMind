@@ -17,7 +17,7 @@ class AiService
     // ------------------------------------------------------------ agents
 
     /** Conversation turn: the AI service remembers earlier turns of the same conversation_id. */
-    public function chat(int $companyId, int $clientId, string $message, ?string $conversationId, string $language): array
+    public function chat(int $companyId, int $clientId, string $message, ?string $conversationId, string $language, ?int $runId = null): array
     {
         return $this->send('POST', '/chat', [
             'company_id' => $companyId,
@@ -25,18 +25,27 @@ class AiService
             'message' => $message,
             'conversation_id' => $conversationId,
             'language' => $language,
-        ])->json();
+        ] + ($runId ? ['run_id' => (string) $runId] : []))->json();
     }
 
     /** One-shot request (no conversation history). */
-    public function run(int $companyId, int $clientId, string $request, string $language): array
+    public function run(int $companyId, int $clientId, string $request, string $language, ?int $runId = null): array
     {
         return $this->send('POST', '/run', [
             'company_id' => $companyId,
             'client_id' => $clientId,
             'request' => $request,
             'language' => $language,
-        ])->json();
+        ] + ($runId ? ['run_id' => (string) $runId] : []))->json();
+    }
+
+    /**
+     * Live progress of a run that was started with its run id: ['known', 'status', 'current_agent',
+     * 'events' => [n, time, type, label, agent, detail]]. Short timeout: it is only a progress hint.
+     */
+    public function runEvents(int $companyId, int $runId, int $since = 0): array
+    {
+        return $this->send('GET', "/run/{$runId}/events", ['company_id' => $companyId, 'since' => $since], null, [], null, 3)->json() ?? [];
     }
 
     // ----------------------------------------------------------- feedback
