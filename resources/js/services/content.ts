@@ -7,7 +7,7 @@ import { api } from "./api";
      in_review --changes requested--> revision_requested ; in_review --rejected--> draft
    Approval stages: reason "escalation" = stage 1 (the manager's internal review); anything else = the client's decision. */
 
-export type ContentStatus = "idea" | "draft" | "in_review" | "approved" | "revision_requested" | "scheduled" | "published";
+export type ContentStatus = "idea" | "draft" | "in_review" | "approved" | "revision_requested" | "scheduled" | "published" | "failed";
 
 export const STATUS_LABEL: Record<string, string> = {
   idea: "Idea",
@@ -17,15 +17,18 @@ export const STATUS_LABEL: Record<string, string> = {
   revision_requested: "Changes requested",
   scheduled: "Scheduled",
   published: "Published",
+  failed: "Failed to publish",
 };
 export const CONTENT_STATUSES = Object.keys(STATUS_LABEL) as ContentStatus[];
-export const CONTENT_TYPES = ["post", "reel", "story", ] as const;
+export const CONTENT_TYPES = ["post", "reel", "story"] as const;
 export const CONTENT_PLATFORMS = ["instagram", "facebook", "tiktok", "x", "linkedin", "snapchat"] as const;
 
 export function contentTone(status: string): "good" | "warn" | "bad" | "plain" {
+  
   if (status === "approved" || status === "published") return "good";
   if (status === "in_review" || status === "scheduled") return "warn";
   if (status === "revision_requested") return "bad";
+    if (status === "failed") return "bad";
   return "plain";
 }
 
@@ -74,15 +77,22 @@ export type Approval = {
 };
 
 export type Decision = "approved" | "rejected" | "changes_requested";
-export type DecisionResult = { stage: "internal" | "client"; content_status: string; next_approval?: unknown };
+export type DecisionResult = {
+  stage: "internal" | "client";
+  content_status: string;
+  next_approval?: unknown;
+  auto_publish_job_id?: number | null; // set when the AI policy scheduled the post by itself
+};
 
 export type PublishJob = {
   id: number;
   content_id: number;
-  status: string; // pending, published, cancelled...
+  status: string; // pending, published, failed, cancelled
   scheduled_at: string;
   published_at: string | null;
   external_post_id: string | null;
+  attempts?: number;
+  last_error?: string | null;
   social_account?: { id: number; platform: string; account_name: string } | null;
   content?: { id: number; client_id: number; title: string; type: string; platform: string; status: string } | null;
 };
@@ -97,12 +107,12 @@ export const contentApi = {
   submit: (id: number) => api<{ stage: "internal" | "client"; content_status: string }>(`/content/${id}/submit`, { method: "POST", body: {} }),
   schedule: (id: number, body: { scheduled_at: string; social_account_id?: number }) =>
     api<PublishJob>(`/content/${id}/schedule`, { method: "POST", body }),
-    update: (id: number, body: { campaign_id: number | null }) => api<unknown>(`/content/${id}`, { method: "PUT", body }),
-   // The AI rewrites the post with the employee's notes (202 + agent_run_id: poll agentApi.run). The post becomes a draft.
+  update: (id: number, body: { campaign_id: number | null }) => api<unknown>(`/content/${id}`, { method: "PUT", body }),
+  // The AI rewrites the post with the employee's notes (202 + agent_run_id: poll agentApi.run). The post becomes a draft.
   revise: (id: number, notes: string) => api<{ agent_run_id: number }>(`/content/${id}/revise`, { method: "POST", body: { notes } }),
   // The person writes the new text by hand (a rare fallback). The post becomes a draft.
   addVersion: (id: number, body: { body: string; instruction?: string }) => api<unknown>(`/content/${id}/versions`, { method: "POST", body }),
-  };
+};
 
 export const approvalsApi = {
   list: () => api<Approval[]>("/approvals"),
@@ -117,6 +127,8 @@ export const publishApi = {
   cancel: (id: number) => api<PublishJob>(`/publish-jobs/${id}/cancel`, { method: "POST", body: {} }),
   markPublished: (id: number, external_post_id?: string) =>
     api<PublishJob>(`/publish-jobs/${id}/mark-published`, { method: "POST", body: external_post_id ? { external_post_id } : {} }),
+  // Automatic publishing only (simulation or meta). 202: the queue worker does it. Also retries a failed job.
+  publishNow: (id: number) => api<PublishJob>(`/publish-jobs/${id}/publish-now`, { method: "POST", body: {} }),
 };
 
 export function fmtDateTime(v: string | null | undefined): string {

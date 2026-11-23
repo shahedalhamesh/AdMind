@@ -17,7 +17,7 @@ export function useRefreshContent() {
   };
 }
 
-// One scheduled post. Posting is done by hand for now: the team posts it, then marks it as published here.
+// One scheduled post. With automatic publishing the AI service posts it; otherwise the team posts it and marks it here.
 export default function PublishJobCard({ job, clientName }: { job: PublishJob; clientName?: string }) {
   const { p } = usePortalTheme();
   const { user } = useAuth();
@@ -32,14 +32,20 @@ export default function PublishJobCard({ job, clientName }: { job: PublishJob; c
   const markPublished = useMutation({ mutationFn: () => publishApi.markPublished(job.id, postId.trim() || undefined), onSuccess: done });
   const reschedule = useMutation({ mutationFn: () => publishApi.reschedule(job.id, localToIso(when)), onSuccess: done });
   const cancel = useMutation({ mutationFn: () => publishApi.cancel(job.id), onSuccess: done });
+  // 202: the queue worker publishes it, so refresh now and again a few seconds later to see the result
+  const publishNow = useMutation({
+    mutationFn: () => publishApi.publishNow(job.id),
+    onSuccess: () => { refresh(); setTimeout(refresh, 5000); setTimeout(refresh, 15000); },
+  });
 
   const pending = job.status === "pending";
+  const failed = job.status === "failed";
   const overdue = isOverdue(job);
-  const err = markPublished.error ?? reschedule.error ?? cancel.error;
+  const err = markPublished.error ?? reschedule.error ?? cancel.error ?? publishNow.error;
   const title = job.content?.title ?? `Content #${job.content_id}`;
 
   return (
-    <div style={{ padding: "16px 18px", borderRadius: 14, border: `1px solid ${overdue ? RED : p.border}`, background: p.card }}>
+    <div style={{ padding: "16px 18px", borderRadius: 14, border: `1px solid ${overdue || failed ? RED : p.border}`, background: p.card }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 240px", minWidth: 0 }}>
           <Link to={`/content/${job.content_id}`} style={{ color: p.text, fontSize: 16, fontWeight: 600, textDecoration: "none", overflowWrap: "anywhere" }}>{title}</Link>
@@ -51,13 +57,33 @@ export default function PublishJobCard({ job, clientName }: { job: PublishJob; c
           <div style={{ fontWeight: 600, color: overdue ? RED : p.text }}>{fmtDateTime(job.scheduled_at)}</div>
           {job.published_at && <div style={{ color: p.muted }}>Posted {fmtDateTime(job.published_at)}</div>}
         </div>
-        {overdue ? <Badge tone="bad">Overdue</Badge> : <Badge tone={job.status === "published" ? "good" : job.status === "cancelled" ? "plain" : "warn"}>{job.status}</Badge>}
+        {failed ? <Badge tone="bad">Failed</Badge>
+          : overdue ? <Badge tone="bad">Overdue</Badge>
+          : <Badge tone={job.status === "published" ? "good" : job.status === "cancelled" ? "plain" : "warn"}>{job.status}</Badge>}
       </div>
+
+      {failed && job.last_error && (
+        <div style={{ marginTop: 12 }}><Notice kind="error">{job.last_error}</Notice></div>
+      )}
+      {publishNow.isSuccess && (
+        <div style={{ marginTop: 12 }}><Notice kind="success">Sent to publish. This can take a minute.</Notice></div>
+      )}
+
+      {failed && canEdit && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+          <Btn small variant="primary" onClick={() => publishNow.mutate()} disabled={publishNow.isPending}>
+            {publishNow.isPending ? "Sending…" : "Try again"}
+          </Btn>
+        </div>
+      )}
 
       {pending && canEdit && mode === null && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
-          <Btn small variant="primary" onClick={() => setMode("publish")}>Mark as published</Btn>
-          <Btn small onClick={() => setMode("reschedule")}>Change time</Btn>
+          <Btn small variant="primary" onClick={() => publishNow.mutate()} disabled={publishNow.isPending}>
+            {publishNow.isPending ? "Sending…" : "Publish now"}
+          </Btn>
+          <Btn small onClick={() => setMode("publish")}>Mark as published</Btn>
+         <TextInput type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
           <Btn small variant="danger" onClick={() => setMode("cancel")}>Cancel</Btn>
         </div>
       )}

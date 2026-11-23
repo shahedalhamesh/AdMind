@@ -28,12 +28,12 @@ export default function ContentDetail() {
   const query = useQuery({ queryKey: ["content", id], queryFn: () => contentApi.get(id), enabled: Number.isFinite(id) });
 
   const item = query.data?.content;
-  const isScheduledOrPublished = item?.status === "scheduled" || item?.status === "published";
+  const isScheduledOrPublished = item?.status === "scheduled" || item?.status === "published" || item?.status === "failed";
 
   // the posting time of this content (its publish job)
   const jobs = useQuery({
     queryKey: ["publish-jobs", { client_id: String(item?.client_id), content: id }],
-    queryFn: () => publishApi.list({ client_id: String(item!.client_id), status: "pending,published", per_page: 100 }),
+    queryFn: () => publishApi.list({ client_id: String(item!.client_id), status: "pending,published,failed", per_page: 100 }),
     enabled: !!item && isScheduledOrPublished,
   });
 
@@ -138,9 +138,9 @@ export default function ContentDetail() {
             </Notice>
           )}
 
-         {canRevise && <RevisePanel contentId={id} clientId={item.client_id} />}
+          {canRevise && <RevisePanel contentId={id} clientId={item.client_id} />}
 
-        {(item.status === "draft" || item.status === "revision_requested") && item.current_version_id && canEditContent && (
+          {(item.status === "draft" || item.status === "revision_requested") && item.current_version_id && canEditContent && (
             <Card>
               <h3 style={{ margin: 0, fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 500 }}>Send for approval</h3>
               <p style={{ margin: "6px 0 14px", fontSize: 13, opacity: 0.75, lineHeight: 1.5 }}>

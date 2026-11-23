@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../AuthContext";
 import { can } from "../../services/auth";
 import { usePortalTheme } from "../../services/portalTheme";
+import { api } from "../../services/api";
 import { agentApi, NOTE_PREFIX } from "../../services/agent";
 import type { AgentRun } from "../../services/agent";
 import { CONTENT_TYPES, contentApi } from "../../services/content";
@@ -270,7 +271,41 @@ function MediaCard({ id, clientId }: { id: number; clientId: number }) {
       <span style={{ fontSize: 12, color: p.muted }}>
         Saved in the <Link to="/media" style={{ fontWeight: 600 }}>Media library</Link>.
       </span>
+      <PostFromMedia mediaId={m.id} clientId={clientId} />
       <AddToDraft mediaId={m.id} clientId={clientId} />
+    </div>
+  );
+}
+
+// "Create a post with this image": the backend makes a draft post from the media.
+function PostFromMedia({ mediaId, clientId }: { mediaId: number; clientId: number }) {
+  const qc = useQueryClient();
+  const make = useMutation({
+    mutationFn: () =>
+      api<{ id?: number; content?: { id: number } }>("/content", {
+        method: "POST",
+        body: { client_id: clientId, media_id: mediaId },
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["content-list"] }),
+  });
+  const newId = make.data?.id ?? make.data?.content?.id;
+
+  if (make.isSuccess) {
+    return (
+      <Notice kind="success">
+        Post created as a draft.{" "}
+        {newId ? <Link to={`/content/${newId}`} style={{ fontWeight: 600 }}>Open the post</Link> : <Link to="/content" style={{ fontWeight: 600 }}>See it in Content</Link>}
+      </Notice>
+    );
+  }
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      {make.isError && <Notice kind="error">{errorText(make.error)}</Notice>}
+      <div>
+        <Btn small variant="primary" onClick={() => make.mutate()} disabled={make.isPending}>
+          {make.isPending ? "Creating…" : "Create a post with this image"}
+        </Btn>
+      </div>
     </div>
   );
 }
@@ -292,17 +327,16 @@ function AddToDraft({ mediaId, clientId }: { mediaId: number; clientId: number }
     return <Notice kind="success">Added to the draft. <Link to={`/content/${postId}`} style={{ fontWeight: 600 }}>Open the post</Link></Notice>;
   }
   const list = drafts.data?.data ?? [];
-  if (drafts.isLoading) return null;
-  if (list.length === 0) return <Notice>No drafts for this client yet. Write a text and press “Save as content” first.</Notice>;
+  if (drafts.isLoading || list.length === 0) return null;
 
   return (
     <div style={{ display: "grid", gap: 8 }}>
       <Select aria-label="Draft" value={postId} onChange={(e) => setPostId(e.target.value)}>
-        <option value="">Choose a draft…</option>
+        <option value="">Or add it to an existing draft…</option>
         {list.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
       </Select>
       {add.isError && <Notice kind="error">{errorText(add.error)}</Notice>}
-      <div><Btn small variant="primary" onClick={() => add.mutate()} disabled={!postId || add.isPending}>{add.isPending ? "Adding…" : "Add to a draft"}</Btn></div>
+      <div><Btn small onClick={() => add.mutate()} disabled={!postId || add.isPending}>{add.isPending ? "Adding…" : "Add to a draft"}</Btn></div>
     </div>
   );
 }
