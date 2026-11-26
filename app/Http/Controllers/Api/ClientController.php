@@ -15,7 +15,7 @@ class ClientController extends Controller
     /** Optional filters: ?status=active&q=cafe */
     public function index(Request $request): JsonResponse
     {
-        $query = Client::query()->orderBy('name');
+        $query = $this->visible($request)->orderBy('name');
 
         if ($request->filled('status')) {
             $query->where('status', $request->query('status'));
@@ -27,9 +27,9 @@ class ClientController extends Controller
         return response()->json($query->get());
     }
 
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
-        return response()->json(Client::with('brandIdentity')->findOrFail($id));
+        return response()->json($this->visible($request)->with('brandIdentity')->findOrFail($id));
     }
 
     public function store(Request $request): JsonResponse
@@ -58,6 +58,22 @@ class ClientController extends Controller
         Client::findOrFail($id)->delete();
 
         return response()->json(['message' => 'Client deleted.']);
+    }
+
+    /**
+     * Owner and Manager (permission tasks.assign) see every client of the company; an Employee sees
+     * only the clients they are responsible for. A client's own login keeps the existing scope.
+     */
+    private function visible(Request $request)
+    {
+        $query = Client::query();
+        $user = $request->user();
+
+        if ($user->company_id !== null && ! $user->client_id && ! $user->hasPermission('tasks.assign')) {
+            $query->where('responsible_user_id', $user->id);
+        }
+
+        return $query;
     }
 
     private function rules(Request $request, bool $creating): array

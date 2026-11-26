@@ -10,6 +10,7 @@ use App\Models\TaskDependency;
 use App\Models\AgentRun;
 use App\Jobs\RunAgentRequest;
 use App\Models\User;
+use App\Services\ContentService;
 use App\Services\StuckWork;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -120,6 +121,8 @@ class TaskController extends Controller
             'created_by_id' => $request->user()->id,
         ] + $this->assignee($companyId, $data));
 
+        $this->notifyAssigned($task, $request->user()->id);
+
         return response()->json($task->load(['assigneeUser:id,name', 'client:id,name']), 201);
     }
 
@@ -164,6 +167,12 @@ class TaskController extends Controller
         }
 
         if (isset($data['status']) && $data['status'] !== $task->status) {
+            // "Waiting for approval" is set by the system only (when the AI draft goes to review)
+            abort_if($data['status'] === 'waiting_approval', 422,
+                'The status "waiting_approval" is set by the system, not by hand.');
+            // Only a person who manages tasks (Owner, Manager) can mark a task completed by hand
+            abort_if($data['status'] === 'completed' && ! $canManage, 403,
+                'Only a manager can mark a task as completed.');
             if ($data['status'] === 'completed') {
                 $blocked = TaskDependency::where('task_id', $task->id)
                     ->whereIn('depends_on_task_id', Task::where('status', '!=', 'completed')->select('id'))->exists();
@@ -177,7 +186,11 @@ class TaskController extends Controller
             }
         }
 
+        $oldAssignee = $task->assignee_user_id;
         $task->update($changes);
+        if ((int) $task->assignee_user_id !== (int) $oldAssignee) {
+            $this->notifyAssigned($task, $user->id);
+        }
 
         return response()->json($task->fresh(['assigneeUser:id,name', 'client:id,name']));
     }
@@ -287,6 +300,16 @@ class TaskController extends Controller
     }
 
     // ---------------------------------------------------------------- helpers
+
+    /** Tell the assigned person (not when they assigned it to themselves). */
+    private function notifyAssigned(Task $task, int $byUserId): void
+    {
+        if ($task->assignee_user_id && (int) $task->assignee_user_id !== $byUserId) {
+            ContentService::notify((int) $task->company_id, [(int) $task->assignee_user_id], 'task_assigned',
+                "New task: {$task->title}", $task->due_at ? 'Due ' . $task->due_at->toDateString() : null,
+                ['task_id' => $task->id]);
+        }
+    }
 
     private function visible(Request $request): Builder
     {

@@ -49,7 +49,7 @@ class ContentService
 
     /**
      * Who reviews what the AI wrote for this client: the client's responsible employee,
-     * else the active Managers, else the active Owners (staff only, never a client login).
+     * else everyone who can approve (staff only, never a client login).
      */
     public static function reviewerIds(int $companyId, ?Client $client): array
     {
@@ -61,15 +61,7 @@ class ContentService
             }
         }
 
-        foreach (['Manager', 'Owner'] as $roleName) {
-            $ids = User::where('company_id', $companyId)->where('status', 'active')->whereNull('client_id')
-                ->whereHas('role', fn ($q) => $q->where('name', $roleName))->pluck('id')->all();
-            if ($ids) {
-                return array_map('intval', $ids);
-            }
-        }
-
-        return [];
+        return self::managerIds($companyId);
     }
 
     public static function notify(int $companyId, array $userIds, string $type, string $title, ?string $body = null, array $data = []): void
@@ -86,18 +78,13 @@ class ContentService
         }
     }
 
-    /** Active Managers of the company, else the Owners (internal reviewers). */
+    /** Every active staff user who can approve (permission approvals.manage: Owners and Managers). */
     public static function managerIds(int $companyId): array
     {
-        foreach (['Manager', 'Owner'] as $roleName) {
-            $ids = User::where('company_id', $companyId)->where('status', 'active')->whereNull('client_id')
-                ->whereHas('role', fn ($q) => $q->where('name', $roleName))->orderBy('id')->pluck('id')->all();
-            if ($ids) {
-                return array_map('intval', $ids);
-            }
-        }
-
-        return [];
+        return User::where('company_id', $companyId)->where('status', 'active')->whereNull('client_id')
+            ->with('role')->orderBy('id')->get()
+            ->filter(fn (User $u) => $u->hasPermission('approvals.manage'))
+            ->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
     }
 
     /**
