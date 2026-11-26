@@ -160,7 +160,7 @@ export default function AgencyLayout() {
           <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>{mainItems.map(renderItem)}</nav>
           {soonItems.length > 0 && (
             <>
-              <div style={{ ...eyebrow, paddingTop: 22 }}>COMING SOON</div>
+                            <div style={{ ...eyebrow, paddingTop: 22 }}>MORE</div>
               <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>{soonItems.map(renderItem)}</nav>
             </>
           )}

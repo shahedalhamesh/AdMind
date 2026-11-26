@@ -17,6 +17,20 @@ export function useRefreshContent() {
   };
 }
 
+// Real publishing runs in the background and can take minutes: refresh every 5 seconds for 5 minutes.
+export function usePollContent() {
+  const refresh = useRefreshContent();
+  return () => {
+    refresh();
+    let n = 0;
+    const t = window.setInterval(() => {
+      refresh();
+      n += 1;
+      if (n >= 60) window.clearInterval(t);
+    }, 5000);
+  };
+}
+
 // One scheduled post. With automatic publishing the AI service posts it; otherwise the team posts it and marks it here.
 export default function PublishJobCard({ job, clientName }: { job: PublishJob; clientName?: string }) {
   const { p } = usePortalTheme();
@@ -32,10 +46,11 @@ export default function PublishJobCard({ job, clientName }: { job: PublishJob; c
   const markPublished = useMutation({ mutationFn: () => publishApi.markPublished(job.id, postId.trim() || undefined), onSuccess: done });
   const reschedule = useMutation({ mutationFn: () => publishApi.reschedule(job.id, localToIso(when)), onSuccess: done });
   const cancel = useMutation({ mutationFn: () => publishApi.cancel(job.id), onSuccess: done });
-  // 202: the queue worker publishes it, so refresh now and again a few seconds later to see the result
+  // 202: the queue worker publishes it, so keep refreshing for a few minutes to see the result
+  const poll = usePollContent();
   const publishNow = useMutation({
     mutationFn: () => publishApi.publishNow(job.id),
-    onSuccess: () => { refresh(); setTimeout(refresh, 5000); setTimeout(refresh, 15000); },
+    onSuccess: poll,
   });
 
   const pending = job.status === "pending";
@@ -84,7 +99,7 @@ export default function PublishJobCard({ job, clientName }: { job: PublishJob; c
             {publishNow.isPending ? "Sending…" : "Publish now"}
           </Btn>
           <Btn small onClick={() => setMode("publish")}>Mark as published</Btn>
-         <TextInput type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
+          <Btn small onClick={() => setMode("reschedule")}>Reschedule</Btn>
           <Btn small variant="danger" onClick={() => setMode("cancel")}>Cancel</Btn>
         </div>
       )}

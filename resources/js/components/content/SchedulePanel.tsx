@@ -5,13 +5,14 @@ import { clientsApi } from "../../services/clients";
 import { contentApi, fmtDateTime, isoToLocal, localToIso, publishApi } from "../../services/content";
 import type { ContentItem } from "../../services/content";
 import { Btn, Card, Field, Notice, Select, TextInput, errorText, fieldError } from "../Ui";
-import { useRefreshContent } from "./PublishJobCard";
+import { useRefreshContent, usePollContent } from "./PublishJobCard";
 
 // Approved content: post it now, or choose a time in the future.
 // `preferred` is the time the client asked for when it approved the post (optional).
 // The account is the client's account on the content's platform; the first one is used unless you pick another.
 export default function SchedulePanel({ item, preferred }: { item: ContentItem; preferred?: string | null }) {
   const refresh = useRefreshContent();
+    const poll = usePollContent();
   const [when, setWhen] = useState("");
   const [accountId, setAccountId] = useState("");
 
@@ -31,7 +32,7 @@ export default function SchedulePanel({ item, preferred }: { item: ContentItem; 
       await publishApi.publishNow(job.id);
       return job;
     },
-    onSettled: () => { refresh(); setTimeout(refresh, 5000); setTimeout(refresh, 15000); },
+    onSettled: poll,
   });
 
   const busy = schedule.isPending || postNow.isPending;
