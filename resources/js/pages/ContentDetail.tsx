@@ -13,7 +13,7 @@ import { Badge, Btn, Card, Loading, Notice, errorText } from "../components/Ui";
 import MediaGallery from "../components/content/MediaGallery";
 
 import OriginalRequest from "../components/content/OriginalRequest";
-
+import CampaignLink from "../components/content/CampaignLink";
 const APPROVAL_LABEL: Record<string, string> = {
   pending: "Waiting",
   approved: "Approved",
@@ -164,6 +164,7 @@ const clientWish = [...approvals].filter((a) => !isInternalStage(a) && a.status 
             jobs.isLoading ? <Loading /> : job ? <PublishJobCard job={job} clientName={item.client?.name} /> : null
           )}
 
+          {canEditContent && <CampaignLink item={item} />}
           <Card>
             <h3 style={{ margin: "0 0 12px", fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 500 }}>Approval history</h3>
             {approvals.length === 0 ? (
