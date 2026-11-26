@@ -78,10 +78,9 @@ export default function AgencyLayout() {
 
   // Show only what this person is allowed to use.
   // The AI chat is for the Employee only. Meetings and Recommendations are for the Owner and the Manager only.
-  const visible = (it: NavItem) =>
+   const visible = (it: NavItem) =>
     (!it.perm || can(user, it.perm)) &&
     (it.to !== "/assistant" || canUseAssistant(user)) &&
-    (!["/content", "/media"].includes(it.to) || !canUseInsights(user)) &&
     (!["/meetings", "/recommendations"].includes(it.to) || canUseInsights(user));
   const mainItems = MAIN.filter(visible);
   const soonItems = SOON.filter(visible);

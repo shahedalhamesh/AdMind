@@ -11,6 +11,12 @@ import { Badge, Btn, Card, Field, Loading, Modal, Notice, Select, TextInput, err
 
 type Tab = "reports" | "numbers" | "goals";
 
+const day = (v?: string | null) => {
+  if (!v) return "";
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? v : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+};
+
 export default function Reports() {
   const { p } = usePortalTheme();
   const [clientId, setClientId] = useState("");
@@ -92,7 +98,7 @@ function ReportsTab({ clientId }: { clientId: string }) {
         {(list.data ?? []).map((r) => (
           <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "14px 18px", borderRadius: 14, border: `1px solid ${p.border}`, background: p.card }}>
             <button type="button" onClick={() => setOpenId(r.id)} style={{ flex: "1 1 220px", textAlign: "start", border: 0, background: "transparent", color: p.text, fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
-              Report #{r.id}{r.period_start && r.period_end ? ` · ${r.period_start} → ${r.period_end}` : ""}
+              Report #{r.id}{r.period_start && r.period_end ? ` · ${day(r.period_start)} → ${day(r.period_end)}` : ""}
             </button>
             <Badge tone={r.visible_to_client ? "good" : "plain"}>{r.visible_to_client ? "Shared with the client" : "Private"}</Badge>
             {can(user, "reports.update") && <Btn small onClick={() => toggle.mutate({ id: r.id, on: !r.visible_to_client })} disabled={toggle.isPending}>{r.visible_to_client ? "Stop sharing" : "Share with the client"}</Btn>}
@@ -127,7 +133,7 @@ export function ReportBody({ d }: { d: ReportData }) {
 
   return (
     <div>
-      <div style={{ fontSize: 14, color: p.muted }}>{d.client?.name} · {d.period?.start} → {d.period?.end}</div>
+      <div style={{ fontSize: 14, color: p.muted }}>{d.client?.name} · {day(d.period?.start)} → {day(d.period?.end)}</div>
       {!d.has_metrics && <div style={{ marginTop: 14 }}><Notice kind="warning">There are no numbers for this period. Add them in the Numbers tab, then generate again.</Notice></div>}
 
       {totals.length > 0 && <>
@@ -185,7 +191,7 @@ function GoalList({ goals, onDelete }: { goals: Goal[]; onDelete?: (g: Goal) => 
             </span>
           </div>
           <div style={{ height: 8, borderRadius: 4, background: p.border, margin: "6px 0 4px" }}><div style={{ height: 8, borderRadius: 4, width: `${Math.min(100, Math.max(0, g.progress_pct))}%`, background: p.pri }} /></div>
-          <div style={{ fontSize: 12, color: p.muted }}>{Math.round(g.progress_pct)}% · {g.starts_on} → {g.ends_on}</div>
+          <div style={{ fontSize: 12, color: p.muted }}>{Math.round(g.progress_pct)}% · {day(g.starts_on)} → {day(g.ends_on)}</div>
         </div>
       ))}
     </div>
@@ -205,6 +211,12 @@ function NumbersTab({ clientId }: { clientId: string }) {
   const accounts = useQuery({ queryKey: ["client-social", Number(clientId)], queryFn: () => clientsApi.accounts(Number(clientId)) });
   const content = useQuery({ queryKey: ["content-list", { clientId, forNumbers: true }], queryFn: () => contentApi.list({ client_id: clientId, status: "published", per_page: 100 }) });
   const saved = useQuery({ queryKey: ["metrics", clientId], queryFn: () => reportsApi.metrics({ client_id: clientId, per_page: 30 }) });
+
+  // a readable name for a saved number: the post title or the account name
+    const subjectName = (type?: string, id?: number): string | undefined =>
+    type === "content" ? content.data?.data.find((c) => c.id === Number(id))?.title
+      : type === "account" ? accounts.data?.find((a) => a.id === Number(id))?.account_name
+        : undefined;
 
   const save = useMutation({
     mutationFn: () => {
@@ -250,8 +262,8 @@ function NumbersTab({ clientId }: { clientId: string }) {
         <div style={{ display: "grid", gap: 8 }}>
           {(saved.data?.data ?? []).map((m, i) => (
             <div key={m.id ?? i} style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", padding: "10px 14px", borderRadius: 10, border: `1px solid ${p.border}`, fontSize: 13 }}>
-              <span>{m.metric} · {m.platform} · {m.subject_type} #{m.subject_id}</span>
-              <span><strong>{m.value !== undefined ? num(m.value) : ""}</strong> <span style={{ color: p.muted }}>{m.metric_date}</span></span>
+              <span dir="auto">{m.metric} · {m.platform} · {subjectName(m.subject_type, m.subject_id) ?? `${m.subject_type} #${m.subject_id}`}</span>
+              <span><strong>{m.value !== undefined ? num(m.value) : ""}</strong> <span style={{ color: p.muted }}>{day(m.metric_date)}</span></span>
             </div>
           ))}
         </div>
