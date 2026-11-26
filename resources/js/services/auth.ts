@@ -111,10 +111,10 @@ export function homeFor(user: AuthUser): string {
 }
 
 // The AI chat is for the Employee only (a product decision): the Owner and the Manager do not use it.
+// The AI chat is for the Employee and the Owner. The Manager does not use it.
+// The AI chat is for everyone who is allowed to run agents (Employee, Manager and Owner).
 export function canUseAssistant(user: AuthUser | null): boolean {
-  if (!can(user, "agents.run")) return false;
-  const role = (user?.role ?? "").toLowerCase();
-  return role !== "owner" && role !== "manager";
+  return can(user, "agents.run");
 }
 
 // Meetings and Recommendations are for the Owner and the Manager only (a product decision).
