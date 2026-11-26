@@ -113,6 +113,9 @@ function TaskDetail({ task, onClose }: { task: Task; onClose: () => void }) {
 
   const canRun = can(user, "tasks.assign") && task.assignee_type === "agent" && ["new", "failed", "waiting_info"].includes(task.status);
   const err = save.error ?? remove.error ?? run.error;
+    const canAssign = can(user, "tasks.assign");
+  // "Waiting for approval" is set by the system only. "Completed" by hand only for the Owner and the Manager.
+  const statusOptions = TASK_STATUSES.filter((s) => s.id === task.status || (!["waiting_approval", "failed"].includes(s.id) && (s.id !== "completed" || canAssign)));
 
   return (
     <Modal title={task.title} onClose={onClose} width={560}>
@@ -132,7 +135,7 @@ function TaskDetail({ task, onClose }: { task: Task; onClose: () => void }) {
         {can(user, "tasks.update") && (
           <Field label="Status" error={fieldError(save.error, "status")}>
             <Select value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
-              {TASK_STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                            {statusOptions.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
             </Select>
           </Field>
         )}

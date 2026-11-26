@@ -51,4 +51,5 @@ export const NOTIFICATION_LABEL: Record<string, string> = {
   client_request: "Client request",
   request_update: "Request update",
   low_satisfaction: "Unhappy client",
+    task_assigned: "New task",
 };
