@@ -19,7 +19,7 @@ use Illuminate\Database\Seeder;
  *  - the AI policies (company default: assisted; Demo Client: autonomous with auto-publish) and the Instagram
  *    account of Demo Client (no real token here: the token stays in the .env, never in Git),
  *  - "Bright Media": a second agency with its own owner and client, to show that agencies never see each other's data,
- *  - 4 more agencies without users, so the platform admin's table of companies shows different plans and statuses.
+ *  - 4 more agencies with a few users and clients each, so the platform admin's table of companies shows different plans and statuses.
  */
 class DemoSeeder extends Seeder
 {
@@ -139,18 +139,46 @@ class DemoSeeder extends Seeder
             'name' => 'Bright Owner', 'email' => 'owner@brightmedia.test', 'password' => 'password', 'status' => 'active',
         ]);
 
-        // ---------- more agencies, only to fill the platform admin's table ----------
+        // ---------- more agencies, so the platform admin's table is not empty ----------
+        // [name, plan name, plan, status, ends at, owner email, extra staff [role, name, email], clients [name, industry, contact, status]]
         $others = [
-            ['Pixel & Co', 'pro', $pro, 'trial', now()->addDays(10)],
-            ['Lumen Creative', 'pro', $pro, 'active', null],
-            ['Orbit Digital', 'free', $free, 'suspended', null],
-            ['Sand Marketing', 'free', $free, 'cancelled', now()->subDays(20)],
+            ['Pixel & Co', 'pro', $pro, 'trial', now()->addDays(10), 'owner@pixelco.test',
+                [['Employee', 'Pixel Designer', 'designer@pixelco.test']],
+                [['Aroma Coffee Roasters', 'Cafe', 'Nadia Fares', 'active'], ['Vista Optics', 'Retail', 'Hadi Mansour', 'active']]],
+            ['Lumen Creative', 'pro', $pro, 'active', null, 'owner@lumen.test',
+                [['Manager', 'Lumen Manager', 'manager@lumen.test'], ['Employee', 'Lumen Writer', 'writer@lumen.test']],
+                [['Cedar Home Furniture', 'Furniture', 'Tariq Awad', 'active'], ['Pulse Fitness Club', 'Fitness', 'Salma Idris', 'active'], ['Noor Bakery', 'Food', 'Yara Mustafa', 'paused']]],
+            ['Orbit Digital', 'free', $free, 'suspended', null, 'owner@orbit.test',
+                [],
+                [['Zest Juice Bar', 'Food and drink', 'Ali Barakat', 'active']]],
+            ['Sand Marketing', 'free', $free, 'cancelled', now()->subDays(20), 'owner@sandmarketing.test',
+                [['Employee', 'Sand Employee', 'staff@sandmarketing.test']],
+                [['Oasis Spa', 'Wellness', 'Lama Rizk', 'churned'], ['Dune Auto Care', 'Automotive', 'Faris Nabil', 'churned']]],
         ];
-        foreach ($others as [$name, $planName, $plan, $status, $ends]) {
-            Company::forceCreate([
+        foreach ($others as [$name, $planName, $plan, $status, $ends, $ownerEmail, $staff, $theirClients]) {
+            $company = Company::forceCreate([
                 'name' => $name, 'plan' => $planName, 'plan_id' => $plan->id,
                 'subscription_status' => $status, 'subscription_ends_at' => $ends, 'features' => [],
             ]);
+            $companyRoles = $this->roles($company);
+
+            User::forceCreate([
+                'company_id' => $company->id, 'role_id' => $companyRoles['Owner']->id, 'client_id' => null,
+                'name' => $name.' Owner', 'email' => $ownerEmail, 'password' => 'password', 'status' => 'active',
+            ]);
+            foreach ($staff as [$role, $staffName, $staffEmail]) {
+                User::forceCreate([
+                    'company_id' => $company->id, 'role_id' => $companyRoles[$role]->id, 'client_id' => null,
+                    'name' => $staffName, 'email' => $staffEmail, 'password' => 'password', 'status' => 'active',
+                ]);
+            }
+            foreach ($theirClients as [$clientName, $industry, $contact, $clientStatus]) {
+                Client::forceCreate([
+                    'company_id' => $company->id, 'name' => $clientName, 'industry' => $industry,
+                    'contact_name' => $contact, 'goals' => 'Grow the brand on social media.',
+                    'agreed_services' => ['content'], 'status' => $clientStatus,
+                ]);
+            }
         }
     }
 
