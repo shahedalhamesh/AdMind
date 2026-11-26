@@ -9,6 +9,7 @@ use App\Models\Client;
 use App\Models\Recommendation;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\ContentService;
 use App\Services\ReportService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -144,6 +145,12 @@ class RecommendationController extends Controller
 
             return $task;
         });
+
+        if ($task->assignee_user_id && (int) $task->assignee_user_id !== $request->user()->id) {
+            ContentService::notify((int) $task->company_id, [(int) $task->assignee_user_id], 'task_assigned',
+                "New task: {$task->title}", $task->due_at ? 'Due ' . $task->due_at->toDateString() : null,
+                ['task_id' => $task->id]);
+        }
 
         return response()->json(['recommendation' => $rec->fresh(), 'task' => $task], 201);
     }

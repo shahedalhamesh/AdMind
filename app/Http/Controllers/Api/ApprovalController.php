@@ -127,6 +127,13 @@ class ApprovalController extends Controller
         }
 
         if ($internal && $data['decision'] === 'approved') {
+            // tell the employee who sent it that the manager approved and the client has it now
+            if ($approval->requested_by_id && $approval->requested_by_id !== $user->id) {
+                ContentService::notify($approval->company_id, [$approval->requested_by_id], 'content_approved',
+                    "Manager approved, sent to the client: {$item->title}", $data['comment'] ?? null,
+                    ['content_id' => $item->id, 'task_id' => $item->task_id, 'decision' => 'approved', 'stage' => 'internal']);
+            }
+
             return response()->json([
                 'stage' => 'internal',
                 'approval' => $approval,

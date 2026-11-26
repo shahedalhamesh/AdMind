@@ -162,6 +162,8 @@ class MeetingController extends Controller
             . '{"summary": "3 to 6 sentences", "key_insights": ["short point"], '
             . '"action_items": [{"description": "what must be done", "assignee": "exact team member name or null", "due_date": "YYYY-MM-DD or null"}]}' . "\n"
             . "Only include action items that were clearly agreed in the meeting. Do not invent anything.\n"
+            . 'Today is ' . now()->toDateString() . ". Every due_date must be on or after the meeting date and never in the past; "
+            . "if the transcript gives only a weekday or a relative time (\"next Tuesday\"), count from the meeting date and pick the first such day after it; if no date is mentioned use null.\n"
             . $decidedNote
             . "Meeting title: {$meeting->title}\nDate: {$meeting->held_at->toDateString()}\n"
             . "Transcript:\n---\n{$meeting->transcript}\n---";
