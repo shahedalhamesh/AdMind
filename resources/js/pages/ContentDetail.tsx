@@ -12,6 +12,8 @@ import PublishJobCard, { useRefreshContent } from "../components/content/Publish
 import { Badge, Btn, Card, Loading, Notice, errorText } from "../components/Ui";
 import MediaGallery from "../components/content/MediaGallery";
 
+import OriginalRequest from "../components/content/OriginalRequest";
+
 const APPROVAL_LABEL: Record<string, string> = {
   pending: "Waiting",
   approved: "Approved",
@@ -31,12 +33,12 @@ export default function ContentDetail() {
   const isScheduledOrPublished = item?.status === "scheduled" || item?.status === "published" || item?.status === "failed";
 
   // the posting time of this content (its publish job)
-  const jobs = useQuery({
+   const jobs = useQuery({
     queryKey: ["publish-jobs", { client_id: String(item?.client_id), content: id }],
-    queryFn: () => publishApi.list({ client_id: String(item!.client_id), status: "pending,published,failed", per_page: 100 }),
+    queryFn: () => publishApi.list({ client_id: String(item!.client_id), status: "pending,publishing,published,failed", per_page: 100 }),
+    refetchInterval: (q) => (q.state.data?.data?.some((j) => j.status === "publishing") ? 4000 : false),
     enabled: !!item && isScheduledOrPublished,
   });
-
   const submit = useMutation({ mutationFn: () => contentApi.submit(id), onSuccess: refresh });
 
   const back = <Link to="/content" style={{ color: p.link, fontSize: 14, fontWeight: 600, textDecoration: "none" }}>← All content</Link>;
@@ -64,7 +66,8 @@ export default function ContentDetail() {
   // the reviewer's last request for changes, shown to the person who has to fix the post
   const managerNote = [...approvals].filter((a) => a.status === "changes_requested" && a.comment).sort((a, b) => b.id - a.id)[0]?.comment ?? null;
   const canRevise = canEditContent && (item.status === "revision_requested" || item.status === "draft");
-
+// the time the client asked for when it approved the post
+const clientWish = [...approvals].filter((a) => !isInternalStage(a) && a.status === "approved" && a.preferred_publish_at).sort((a, b) => b.id - a.id)[0]?.preferred_publish_at ?? null;
   return (
     <div>
       {back}
@@ -84,6 +87,8 @@ export default function ContentDetail() {
         <div style={{ display: "grid", gap: 18 }}>
           <Card>
             <MediaGallery contentId={id} clientId={item.client_id} editable={canEditContent} />
+                       
+            <OriginalRequest contentId={id} />
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
               <h3 style={{ margin: 0, fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 500 }}>Text</h3>
               {version && <span style={{ fontSize: 12, color: p.muted }}>Version {version.version_number}{version.language ? ` · ${version.language.toUpperCase()}` : ""}</span>}
@@ -152,7 +157,7 @@ export default function ContentDetail() {
             </Card>
           )}
 
-          {item.status === "approved" && canEditContent && <SchedulePanel item={item} />}
+         {item.status === "approved" && canEditContent && <SchedulePanel item={item} preferred={clientWish} />}
           {item.status === "approved" && !canEditContent && <Notice kind="success">Approved. Waiting to be scheduled.</Notice>}
 
           {isScheduledOrPublished && (

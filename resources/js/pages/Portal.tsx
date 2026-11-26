@@ -10,6 +10,7 @@ import type { Approval } from "../services/content";
 import { reportsApi } from "../services/reports";
 import { ReportBody } from "./Reports";
 import ClientRequests from "../components/portal/ClientRequests";
+import FeedbackForm from "../components/portal/FeedbackForm";
 import { Badge, Btn, Loading, Modal, Notice, errorText } from "../components/Ui";
 
 const DECIDED: Record<string, string> = { approved: "You approved", rejected: "You rejected", changes_requested: "You asked for changes" };
@@ -36,7 +37,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
   );
 }
 
-type Tab = "review" | "done" | "reports" | "requests";
+type Tab = "review" | "done" | "reports" | "requests" | "feedback";
 
 export default function Portal() {
   const { p } = usePortalTheme();
@@ -74,7 +75,10 @@ export default function Portal() {
   };
 
   const tabs: [Tab, string][] = [["review", `To review (${review.length})`], ["done", `Decided (${done.length})`], ["reports", `Reports (${sharedReports.length})`]];
-  if (can(user, "requests.create")) tabs.push(["requests", "My requests"]);
+  if (can(user, "requests.create")) {
+    tabs.push(["requests", "My requests"]);
+    tabs.push(["feedback", "Feedback"]);
+  }
 
   return (
     <PortalShell>
@@ -122,6 +126,7 @@ export default function Portal() {
       )}
 
       {tab === "requests" && <ClientRequests />}
+      {tab === "feedback" && <FeedbackForm />}
 
       {openReport !== null && <SharedReport id={openReport} onClose={() => setOpenReport(null)} />}
     </PortalShell>

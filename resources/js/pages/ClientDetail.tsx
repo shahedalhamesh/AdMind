@@ -11,16 +11,21 @@ import ClientForm from "../components/client/ClientForm";
 import ProfileTab from "../components/client/ProfileTab";
 import DocumentsTab from "../components/client/DocumentsTab";
 import SocialTab from "../components/client/SocialTab";
+import HistoryTab from "../components/client/HistoryTab";
 import { Badge, Btn, Card, Loading, Modal, Notice, errorText } from "../components/Ui";
 import { statusTone } from "./Clients";
+import SatisfactionTab from "../components/client/SatisfactionTab";
+import ContractsTab from "../components/client/ContractsTab";
 
-type Tab = "profile" | "documents" | "social";
+type Tab = "profile" | "documents" | "social" | "history" | "satisfaction" | "contracts";
 const TABS: { id: Tab; label: string }[] = [
   { id: "profile", label: "Brand profile" },
   { id: "documents", label: "Documents" },
   { id: "social", label: "Social accounts" },
+  { id: "history", label: "History" },
+  { id: "satisfaction", label: "Satisfaction" },
+  { id: "contracts", label: "Contracts" },
 ];
-
 function Info({ label, children }: { label: string; children: ReactNode }) {
   const { p } = usePortalTheme();
   return (
@@ -141,6 +146,9 @@ export default function ClientDetail() {
       {tab === "profile" && <ProfileTab client={c} />}
       {tab === "documents" && <DocumentsTab client={c} />}
       {tab === "social" && <SocialTab client={c} />}
+      {tab === "history" && <HistoryTab clientId={c.id} />}
+      {tab === "satisfaction" && <SatisfactionTab clientId={c.id} />}
+      {tab === "contracts" && <ContractsTab clientId={c.id} />}
 
       {editing && <ClientForm client={c} onClose={() => setEditing(false)} onSaved={() => setEditing(false)} />}
 

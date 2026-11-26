@@ -1,8 +1,12 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { can, canUseAssistant, canUseInsights } from "../services/auth";
 import { useAuth } from "../components/AuthContext";
 import { usePortalTheme } from "../services/portalTheme";
 import LangToggle from "../components/LangToggle";
+import NotificationBell from "../components/NotificationBell";
+import InstallAppButton from "../components/InstallAppButton";
+
 
 const ICONS: Record<string, React.ReactNode> = {
   home: <><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="M9 22V12h6v10" /></>,
@@ -37,12 +41,27 @@ const SOON: NavItem[] = [
   { to: "/recommendations", label: "Recommendations", icon: "ok", built: true, perm: "clients.view" },
   { to: "/requests", label: "Requests", icon: "ok", built: true, perm: "clients.view" },
   { to: "/publishing", label: "Publishing", icon: "task", built: true, perm: "content.view" },
+  { to: "/ai-policy", label: "AI policy", icon: "ai", built: true, perm: "clients.update" },
+  { to: "/audit", label: "Activity log", icon: "task", built: true, perm: "audit.view" },
+  { to: "/renewals", label: "Renewals", icon: "ok", built: true, perm: "clients.view" },
+  { to: "/ai-performance", label: "AI performance", icon: "chart", built: true, perm: "reports.create" },
 ];
 
 export default function AgencyLayout() {
   const { dark, toggle, p } = usePortalTheme();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, signOut } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // on a small screen the menu is a drawer: close it on a new page and with Escape
+  useEffect(() => { setMenuOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
 
   let agency = "Your agency";
   try {
@@ -102,14 +121,33 @@ export default function AgencyLayout() {
 
   return (
     <div className="pl-shell" style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: "268px minmax(0, 1fr)", background: p.bg, color: p.text, fontFamily: "Inter, system-ui, sans-serif", transition: "background .3s" }}>
-      <style>{`
+           <style>{`
         .pl-in::placeholder{color:${p.muted};opacity:.7}
-        @media (max-width: 900px){ .pl-shell{grid-template-columns:1fr!important} .pl-side{display:none!important} }
+        .pl-burger{display:none}
+        .pl-backdrop{display:none}
+        @media (max-width: 900px){
+          .pl-shell{grid-template-columns:minmax(0,1fr)!important}
+          .pl-side{display:none!important}
+          .pl-side.pl-open{display:flex!important;position:fixed!important;top:0!important;bottom:0!important;inset-inline-start:0!important;width:288px!important;height:100dvh!important;z-index:50;box-shadow:0 0 40px rgba(0,0,0,.5)}
+          .pl-backdrop{display:block}
+          .pl-burger{display:flex!important}
+          .pl-hdr{padding:0 14px!important;gap:8px!important}
+          .pl-main{padding:20px 16px 56px!important;min-width:0}
+          .pl-main [style*="display: flex"]{flex-wrap:wrap}
+          .pl-main table{display:block;max-width:100%;overflow-x:auto}
+          .pl-main img,.pl-main svg{max-width:100%}
+        }
+        @media (max-width: 640px){
+          .pl-main [style*="grid-template-columns"]{grid-template-columns:minmax(0,1fr)!important}
+        }
+        @media (max-width: 600px){ .pl-search{display:none!important} }
         @media (prefers-reduced-motion: reduce){*{animation:none!important}}
       `}</style>
 
-      {/* Sidebar */}
-      <aside className="pl-side" style={{ background: p.side, borderInlineEnd: `1px solid ${p.border}`, padding: "22px 16px", display: "flex", flexDirection: "column", boxSizing: "border-box", position: "sticky", top: 0, height: "100vh" }}>
+      {menuOpen && <div className="pl-backdrop" onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 40 }} />}
+
+      {/* Sidebar (a drawer on a small screen) */}
+      <aside className={`pl-side${menuOpen ? " pl-open" : ""}`} style={{ background: p.side, borderInlineEnd: `1px solid ${p.border}`, padding: "22px 16px", display: "flex", flexDirection: "column", boxSizing: "border-box", position: "sticky", top: 0, height: "100vh" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "0 8px 22px" }}>
           <div style={{ width: 42, height: 42, borderRadius: 12, background: p.logoBg, boxShadow: `0 0 0 1.5px ${p.priB}, 0 0 18px -4px ${p.priSh}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={p.logoIc} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" /><path d="M9 13a4.5 4.5 0 0 0 3-4" /><path d="M12 13h4" /><path d="M12 8h8" /></svg>
@@ -128,7 +166,7 @@ export default function AgencyLayout() {
             </>
           )}
         </div>
-
+        <InstallAppButton />
         <div style={{ flexShrink: 0, padding: 14, borderRadius: 14, border: `1px solid ${p.border}`, background: p.card }}>
           <div role="link" tabIndex={0} title="My account" onClick={() => navigate("/profile")} onKeyDown={(e) => { if (e.key === "Enter") navigate("/profile"); }}
             style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
@@ -146,11 +184,11 @@ export default function AgencyLayout() {
       {/* Main */}
       <div style={{ position: "relative", display: "flex", flexDirection: "column", minWidth: 0 }}>
         <div aria-hidden style={{ position: "absolute", inset: "0 0 auto 0", height: 400, background: `radial-gradient(ellipse at 85% -20%, ${dark ? "rgba(43,147,188,0.14)" : "rgba(43,147,188,0.08)"} 0%, transparent 60%)`, pointerEvents: "none" }} />
-        <header style={{ position: "sticky", top: 0, zIndex: 10, height: 72, boxSizing: "border-box", padding: "0 36px", display: "flex", alignItems: "center", gap: 14, borderBottom: `1px solid ${p.border}`, background: p.hdr, backdropFilter: "blur(10px)" }}>
-          <label style={{ width: 380, maxWidth: "50%", height: 42, boxSizing: "border-box", display: "flex", alignItems: "center", gap: 10, padding: "0 14px", borderRadius: 10, border: `1px solid ${p.border}`, background: p.card, color: p.muted, fontSize: 14 }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
-            <input className="pl-in" placeholder="Search clients, content, requests" style={{ flex: 1, minWidth: 0, border: 0, outline: 0, background: "transparent", color: p.text, fontSize: 14, fontFamily: "inherit" }} />
-          </label>
+             <header className="pl-hdr" style={{ position: "sticky", top: 0, zIndex: 10, height: 72, boxSizing: "border-box", padding: "0 36px", display: "flex", alignItems: "center", gap: 14, borderBottom: `1px solid ${p.border}`, background: p.hdr, backdropFilter: "blur(10px)" }}>
+          <button type="button" className="pl-burger" aria-label="Open the menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}
+            style={{ width: 42, height: 42, flexShrink: 0, borderRadius: 10, border: `1px solid ${p.border}`, background: p.card, color: p.text, cursor: "pointer", alignItems: "center", justifyContent: "center" }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          </button>
           <div style={{ marginInlineStart: "auto", display: "flex", alignItems: "center", gap: 10 }}>
             <LangToggle />
             <button type="button" onClick={toggle} aria-label="Toggle theme"
@@ -159,13 +197,10 @@ export default function AgencyLayout() {
                 ? <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2" /></svg>
                 : <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" /></svg>}
             </button>
-            <button type="button" aria-label="Notifications"
-              style={{ position: "relative", width: 42, height: 42, borderRadius: 10, border: `1px solid ${p.border}`, background: p.card, color: p.text, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg>
-            </button>
+            <NotificationBell />
           </div>
         </header>
-        <main style={{ position: "relative", padding: "30px 36px 70px" }}>
+        <main className="pl-main" style={{ position: "relative", padding: "30px 36px 70px" }}>
           <Outlet />
         </main>
       </div>

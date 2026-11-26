@@ -8,7 +8,9 @@ import { clientsApi } from "../services/clients";
 import { contentApi } from "../services/content";
 import { ASPECT_RATIOS, MAX_UPLOAD_MB, mediaApi } from "../services/media";
 import type { MediaItem } from "../services/media";
+import { useAiOff } from "../services/aiPolicy";
 import { MediaPreview } from "../components/content/MediaGallery";
+import AiOrb from "../components/content/AiOrb";
 import { Badge, Btn, Field, Loading, Modal, Notice, Select, TextArea, errorText } from "../components/Ui";
 
 export default function Media() {
@@ -22,6 +24,7 @@ export default function Media() {
   const [openItem, setOpenItem] = useState<MediaItem | null>(null);
   const [creating, setCreating] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const policy = useAiOff(clientId);
 
   const clients = useQuery({ queryKey: ["clients", { q: "", status: "" }], queryFn: () => clientsApi.list({}) });
   const list = useQuery({
@@ -54,7 +57,14 @@ export default function Media() {
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <input ref={fileInput} type="file" hidden accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/aac,.m4a,.mp3,.wav" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
             <Btn onClick={() => fileInput.current?.click()} disabled={upload.isPending}>{upload.isPending ? "Uploading…" : "Upload a file"}</Btn>
-            <button type="button" className="ai-button ai-button-solid" onClick={() => setCreating(true)} style={{ padding: "11px 20px", fontSize: 14, cursor: "pointer" }}>
+            <button
+              type="button"
+              className="ai-button ai-button-solid"
+              onClick={() => setCreating(true)}
+              disabled={policy.off}
+              title={policy.off ? policy.message : undefined}
+              style={{ padding: "11px 20px", fontSize: 14, cursor: policy.off ? "not-allowed" : "pointer", opacity: policy.off ? 0.5 : 1 }}
+            >
               ✦ Create with AI
             </button>
           </div>
@@ -78,6 +88,11 @@ export default function Media() {
         </div>
       </div>
 
+      {policy.off && (
+        <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 12, border: `1px solid ${p.border}`, color: p.muted, fontSize: 13 }}>
+          {policy.message}
+        </div>
+      )}
       {uploadError && <div style={{ marginBottom: 14 }}><Notice kind="error">{uploadError}</Notice></div>}
       {upload.isError && <div style={{ marginBottom: 14 }}><Notice kind="error">{errorText(upload.error)}</Notice></div>}
       {!clientId && <div style={{ padding: 28, borderRadius: 16, border: `1px dashed ${p.border}`, color: p.muted, fontSize: 15 }}>Choose a client to see their files.</div>}
@@ -94,8 +109,9 @@ export default function Media() {
             {(m.status !== "ready" || m.type === "audio") && (
               <div style={{ height: 150, display: "grid", placeItems: "center", padding: 12, fontSize: 13, color: m.status === "processing" ? p.aiText : p.muted, textAlign: "center" }}>
                 {m.status === "processing" ? (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <span className="ai-dot" />Creating… {m.metadata?.step ?? ""}
+                  <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                    <AiOrb size={34} />
+                    <span>Creating… {m.metadata?.step ?? ""}</span>
                   </span>
                 ) : m.status === "failed" ? "Failed" : "Audio"}
               </div>

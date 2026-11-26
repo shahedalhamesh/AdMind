@@ -226,3 +226,23 @@ body {
     transition: none;
   }
 }
+
+/* ---- AI orb: a glowing core with three dots orbiting it (the "AI is working" indicator) ---- */
+.ai-orb { position: relative; display: inline-block; width: 30px; height: 30px; flex: none; color: #4DD8FF; filter: drop-shadow(0 0 4px currentColor); }
+.ai-orb::before {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff 0, currentColor 45%, transparent 78%);
+  animation: ai-orb-pulse 1.8s ease-in-out infinite;
+}
+.ai-orb i { position: absolute; inset: 0; transform: rotate(var(--t, 0deg)) scaleY(.42); }
+.ai-orb i::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(circle at 50% 6%, currentColor 0 2.4px, transparent 3.2px);
+  animation: ai-orb-spin var(--d, 1.6s) linear infinite;
+}
+.ai-orb i:nth-child(1) { --t: 0deg;   --d: 1.5s; }
+.ai-orb i:nth-child(2) { --t: 60deg;  --d: 1.9s; }
+.ai-orb i:nth-child(3) { --t: -60deg; --d: 2.3s; }
+@keyframes ai-orb-spin { to { transform: rotate(360deg); } }
+@keyframes ai-orb-pulse { 0%, 100% { transform: scale(.85); opacity: .8; } 50% { transform: scale(1.15); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ai-orb::before, .ai-orb i::before { animation: none; } }

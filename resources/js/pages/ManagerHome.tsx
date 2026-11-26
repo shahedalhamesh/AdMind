@@ -5,7 +5,7 @@ import { usePortalTheme } from "../services/portalTheme";
 import { approvalsApi, contentApi, fmtDateTime, isInternalStage, isOverdue, publishApi } from "../services/content";
 import { Badge, Card, Loading, Notice, RED, errorText } from "../components/Ui";
 import NotificationsPanel from "../components/NotificationsPanel";
-
+import AtRiskCard from "../components/AtRiskCard";
 // How many content items have a given status (one small request each: only the total is read).
 function useTotal(status: string) {
   return useQuery({ queryKey: ["content-total", status], queryFn: async () => (await contentApi.list({ status, per_page: 1 })).total });
@@ -53,6 +53,7 @@ export default function ManagerHome() {
 
       <Card style={{ marginTop: 26 }}>
         <h2 style={{ margin: "0 0 16px", fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 500 }}>Where the content is right now</h2>
+             <div style={{ marginTop: 26 }}><AtRiskCard /></div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
           {steps.map((s) => (
             <Link key={s.label} to={s.to}

@@ -6,7 +6,7 @@ import type { AppNotification } from "../services/notifications";
 import { fmtDateTime } from "../services/content";
 import { Badge, Btn, Loading, Notice, errorText } from "./Ui";
 
-// Notifications shown inside the page (no bell). Refreshes by itself every 30 seconds while the page is open.
+// Notifications shown inside the page. Refreshes by itself every 30 seconds while the page is open.
 export default function NotificationsPanel({ limit = 5, unreadOnly = false }: { limit?: number; unreadOnly?: boolean }) {
   const { p } = usePortalTheme();
   const nav = useNavigate();
@@ -40,8 +40,8 @@ export default function NotificationsPanel({ limit = 5, unreadOnly = false }: { 
       )}
       {list.isLoading && <Loading />}
       {list.isError && <Notice kind="error">{errorText(list.error)}</Notice>}
-     {list.isSuccess && items.length === 0 && <p style={{ margin: 0, fontSize: 14, color: p.muted }}>Nothing here.</p>}
-           <div style={{ display: "grid", gap: 10, maxHeight: 420, overflowY: "auto", paddingInlineEnd: 4 }}>
+      {list.isSuccess && items.length === 0 && <p style={{ margin: 0, fontSize: 14, color: p.muted }}>Nothing here.</p>}
+      <div style={{ display: "grid", gap: 10, maxHeight: 420, overflowY: "auto", paddingInlineEnd: 4 }}>
         {items.map((n) => {
           const unreadItem = !n.read_at;
           const clickable = !!notificationTarget(n);

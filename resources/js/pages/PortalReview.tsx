@@ -4,12 +4,12 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "../components/AuthContext";
 import { ApiError } from "../services/api";
 import { usePortalTheme } from "../services/portalTheme";
-import { approvalsApi, contentApi, fmtDateTime, isInternalStage } from "../services/content";
+import { approvalsApi, contentApi, fmtDateTime, isInternalStage, localToIso } from "../services/content";
 import type { Approval, Decision } from "../services/content";
 import { PortalShell } from "./Portal";
 import MediaGallery from "../components/content/MediaGallery";
 import { useRefreshContent } from "../components/content/PublishJobCard";
-import { Badge, Btn, Card, Field, Loading, Notice, TextArea, errorText, fieldError } from "../components/Ui";
+import { Badge, Btn, Card, Field, Loading, Notice, TextArea, TextInput, errorText, fieldError } from "../components/Ui";
 
 const CHOICES: { id: Decision; label: string; variant: "primary" | "ghost" | "danger"; needsComment: boolean; help: string }[] = [
   { id: "approved", label: "Approve", variant: "primary", needsComment: false, help: "You are happy with it. The agency will schedule it." },
@@ -79,6 +79,9 @@ export default function PortalReview() {
                 <div key={a.id} style={{ paddingBottom: 12, borderBottom: `1px solid ${p.border}` }}>
                   <Badge tone={a.status === "approved" ? "good" : "bad"}>{STATUS[a.status] ?? a.status}</Badge>
                   {a.comment && <div dir="auto" style={{ marginTop: 8, fontSize: 14, lineHeight: 1.6 }}>&ldquo;{a.comment}&rdquo;</div>}
+                  {a.preferred_publish_at && (
+                    <div style={{ marginTop: 8, fontSize: 13, color: p.muted }}>You asked to publish it on {fmtDateTime(a.preferred_publish_at)}</div>
+                  )}
                   <div style={{ marginTop: 6, fontSize: 12, color: p.muted }}>{fmtDateTime(a.decided_at ?? a.created_at)}</div>
                 </div>
               ))}
@@ -95,14 +98,22 @@ function ClientDecision({ approval }: { approval: Approval }) {
   const refresh = useRefreshContent();
   const [choice, setChoice] = useState<Decision | null>(null);
   const [comment, setComment] = useState("");
+  const [when, setWhen] = useState("");
 
   const decide = useMutation({
-    mutationFn: () => approvalsApi.decide(approval.id, { decision: choice as Decision, comment: comment.trim() || undefined }),
+    mutationFn: () =>
+      approvalsApi.decide(approval.id, {
+        decision: choice as Decision,
+        comment: comment.trim() || undefined,
+        // the time the client would like it published: only with "approved"
+        ...(choice === "approved" && when ? { preferred_publish_at: localToIso(when) } : {}),
+      }),
     onSuccess: refresh,
   });
 
   const current = CHOICES.find((c) => c.id === choice);
   const ready = !!current && (!current.needsComment || comment.trim().length > 0);
+  const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
   if (decide.isSuccess) return <Notice kind="success">Thank you. Your answer was sent to the agency.</Notice>;
 
@@ -121,6 +132,13 @@ function ClientDecision({ approval }: { approval: Approval }) {
           <Field label={current.needsComment ? "Your notes *" : "Comment (optional)"} error={fieldError(decide.error, "comment")}>
             <TextArea value={comment} onChange={(e) => setComment(e.target.value)} maxLength={2000} dir="auto" rows={6} autoFocus />
           </Field>
+
+          {choice === "approved" && (
+            <Field label="When would you like it published? (optional)" error={fieldError(decide.error, "preferred_publish_at")}>
+              <TextInput type="datetime-local" lang="en-US" min={now} value={when} onChange={(e) => setWhen(e.target.value)} />
+            </Field>
+          )}
+
           {decide.isError && <Notice kind="error">{errorText(decide.error)}</Notice>}
           <div><Btn variant={current.variant === "ghost" ? "primary" : current.variant} type="submit" disabled={decide.isPending || !ready}>{decide.isPending ? "Sending…" : `Send: ${current.label.toLowerCase()}`}</Btn></div>
         </form>

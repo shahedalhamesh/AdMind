@@ -7,9 +7,14 @@ import { usePortalTheme } from "../../services/portalTheme";
 import { api } from "../../services/api";
 import { agentApi, NOTE_PREFIX } from "../../services/agent";
 import type { AgentRun } from "../../services/agent";
+import { useAiOff } from "../../services/aiPolicy";
 import { CONTENT_TYPES, contentApi } from "../../services/content";
 import { ASPECT_RATIOS, mediaApi } from "../../services/media";
 import { MediaPreview } from "./MediaGallery";
+import AgentTimeline from "./AgentTimeline";
+import AiOrb from "./AiOrb";
+import { MediaWarnings, VoiceSelect, mediaErrorText, mediaHint, withVoice } from "./mediaHelpers";
+import type { Voice } from "./mediaHelpers";
 import { Badge, Btn, Field, Notice, Select, TextArea, TextInput, errorText, fieldError } from "../Ui";
 
 type Mode = "text" | "image" | "reel";
@@ -36,12 +41,14 @@ export default function AiStudio({ clients, onClose }: { clients: { id: number; 
   const [clientId, setClientId] = useState("");
   const [mode, setMode] = useState<Mode>("text");
   const [language, setLanguage] = useState<"Arabic" | "English">("Arabic");
+  const [voice, setVoice] = useState<Voice>("none");
   const [ratio, setRatio] = useState("1:1");
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [runId, setRunId] = useState<number | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const policy = useAiOff(clientId);
 
   const send = useMutation({
     mutationFn: (message: string) => agentApi.chat({ client_id: Number(clientId), message, conversation_id: conversationId, language }),
@@ -56,7 +63,7 @@ export default function AiStudio({ clients, onClose }: { clients: { id: number; 
       mediaApi.generate({
         client_id: Number(clientId),
         kind: mode === "reel" ? "reel" : "image",
-        request,
+        request: mode === "reel" ? withVoice(request, voice) : request,
         aspect_ratio: ratio,
         ...(mode === "reel" ? { language } : {}),
       }),
@@ -93,7 +100,7 @@ export default function AiStudio({ clients, onClose }: { clients: { id: number; 
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [messages, runId]);
 
   const busy = send.isPending || generate.isPending || runId !== null;
-  const canSend = !!clientId && input.trim().length > 0 && !busy;
+  const canSend = !!clientId && !policy.off && input.trim().length > 0 && !busy;
 
   const submit = () => {
     if (!canSend) return;
@@ -115,9 +122,10 @@ export default function AiStudio({ clients, onClose }: { clients: { id: number; 
 
   const placeholder = !clientId
     ? "Choose a client first"
+    : policy.off ? "The AI is turned off for this client"
     : mode === "text" ? "Write your request…"
     : mode === "image" ? "Describe the image you want…"
-    : "Describe the reel you want. Add “female voice” or “male voice” if you want a voiceover…";
+    : "Describe the reel you want. Pick a voice below if you want a voiceover.";
 
   const modeBtn = (m: Mode, label: string) => (
     <button
@@ -162,7 +170,18 @@ export default function AiStudio({ clients, onClose }: { clients: { id: number; 
             </Select>
           </div>
         )}
+        {mode === "reel" && (
+          <div style={{ width: 170 }}>
+            <VoiceSelect value={voice} onChange={setVoice} noneLabel="No voiceover" />
+          </div>
+        )}
       </div>
+
+      {policy.off && (
+        <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 12, border: `1px solid ${p.border}`, color: p.muted, fontSize: 13 }}>
+          {policy.message}
+        </div>
+      )}
 
       <div style={{ display: "grid", gap: 14, minHeight: 160, padding: 16, borderRadius: 14, border: `1px solid ${p.border}` }}>
         {messages.length === 0 && !busy && (
@@ -194,13 +213,17 @@ export default function AiStudio({ clients, onClose }: { clients: { id: number; 
         })}
 
         {busy && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: p.aiText }}>
-            <span className="ai-dot" />
-            {mode === "text" ? "The AI is working on it. This usually takes between 15 seconds and 2 minutes…" : "Sending your request…"}
-          </div>
+          mode === "text" ? (
+            <AgentTimeline run={run.data} />
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: p.aiText }}>
+              <AiOrb size={20} />
+              Sending your request…
+            </div>
+          )
         )}
         {send.isError && <Notice kind="error">{errorText(send.error)}</Notice>}
-        {generate.isError && <Notice kind="error">{errorText(generate.error)}</Notice>}
+        {generate.isError && <Notice kind="error">{mediaErrorText(generate.error)}</Notice>}
         {run.isError && <Notice kind="error">{errorText(run.error)}</Notice>}
         <div ref={bottom} />
       </div>
@@ -215,14 +238,14 @@ export default function AiStudio({ clients, onClose }: { clients: { id: number; 
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
-          maxLength={mode === "text" ? 4000 : 2000}
+          maxLength={mode === "text" ? 4000 : 1980}
           dir="auto"
           placeholder={placeholder}
-          disabled={!clientId}
+          disabled={!clientId || policy.off}
         />
         {mode === "reel" && (
           <span style={{ fontSize: 12, color: p.muted, lineHeight: 1.5 }}>
-            A reel takes 2 to 12 minutes. You can leave this page. The AI builds one file at a time.
+            A reel takes 2 to 12 minutes. You can leave this page. The AI builds one file at a time. There is no background music for now.
           </span>
         )}
         <div>
@@ -230,6 +253,7 @@ export default function AiStudio({ clients, onClose }: { clients: { id: number; 
             type="submit"
             className="ai-button ai-button-solid"
             disabled={!canSend}
+            title={policy.off ? policy.message : undefined}
             style={{ padding: "10px 22px", cursor: canSend ? "pointer" : "not-allowed", opacity: canSend ? 1 : 0.55 }}
           >
             {busy ? "Please wait…" : mode === "text" ? "Send" : "Create"}
@@ -257,17 +281,21 @@ function MediaCard({ id, clientId }: { id: number; clientId: number }) {
   if (m.status === "processing") {
     return (
       <div style={{ ...box, color: p.muted, fontSize: 14, borderColor: p.aiBorder }}>
-        <span><span className="ai-dot" style={{ marginInlineEnd: 8 }} /><strong style={{ color: p.text }}>{m.type === "video" ? "Reel" : "Image"}</strong> · {stepLabel(m.metadata?.step)}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <AiOrb size={22} />
+          <span><strong style={{ color: p.text }}>{m.type === "video" ? "Reel" : "Image"}</strong> · {stepLabel(m.metadata?.step)}</span>
+        </span>
         <span style={{ fontSize: 12 }}>You can leave this page. You will get a notification when it is ready.</span>
       </div>
     );
   }
-  if (m.status === "failed") return <Notice kind="error">{m.error || "The AI could not make this file."}</Notice>;
+  if (m.status === "failed") return <Notice kind="error">{mediaHint(m.error || "The AI could not make this file.")}</Notice>;
 
   return (
     <div style={box}>
       <MediaPreview m={m} onBroken={() => q.refetch()} />
       {m.metadata?.script && <div dir="auto" style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.6 }}><strong>Voiceover:</strong> {m.metadata.script}</div>}
+      <MediaWarnings m={m} />
       <span style={{ fontSize: 12, color: p.muted }}>
         Saved in the <Link to="/media" style={{ fontWeight: 600 }}>Media library</Link>.
       </span>
@@ -277,7 +305,7 @@ function MediaCard({ id, clientId }: { id: number; clientId: number }) {
   );
 }
 
-// "Create a post with this image": the backend makes a draft post from the media.
+// "Create a post with this file": the backend makes a draft post from the media.
 function PostFromMedia({ mediaId, clientId }: { mediaId: number; clientId: number }) {
   const qc = useQueryClient();
   const make = useMutation({
@@ -303,7 +331,7 @@ function PostFromMedia({ mediaId, clientId }: { mediaId: number; clientId: numbe
       {make.isError && <Notice kind="error">{errorText(make.error)}</Notice>}
       <div>
         <Btn small variant="primary" onClick={() => make.mutate()} disabled={make.isPending}>
-          {make.isPending ? "Creating…" : "Create a post with this image"}
+          {make.isPending ? "Creating…" : "Create a post with this file"}
         </Btn>
       </div>
     </div>

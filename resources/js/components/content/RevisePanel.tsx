@@ -4,19 +4,27 @@ import { api } from "../../services/api";
 import { useAuth } from "../AuthContext";
 import { can } from "../../services/auth";
 import { mediaApi } from "../../services/media";
+import type { AgentRun } from "../../services/agent";
+import { useAiOff } from "../../services/aiPolicy";
 import { usePortalTheme } from "../../services/portalTheme";
-import { Notice, TextArea, errorText } from "../Ui";
+import AgentTimeline from "./AgentTimeline";
+import AiOrb from "./AiOrb";
+import { MediaWarnings, VoiceSelect, mediaErrorText, mediaHint, withVoice } from "./mediaHelpers";
+import type { Voice } from "./mediaHelpers";
+import { Notice, Select, TextArea, errorText } from "../Ui";
 
-type Run = { id: number; status: "running" | "succeeded" | "failed"; needs_info: boolean; output: string | null; error: string | null };
 type MediaJob = { id: number; old: number[] }; // the new file being made, and the old files it replaces
 
 export default function RevisePanel({ contentId, clientId }: { contentId: number; clientId: number }) {
   const qc = useQueryClient();
   const { p } = usePortalTheme();
   const { user } = useAuth();
+  const policy = useAiOff(clientId);
   const [notes, setNotes] = useState("");
   const [doText, setDoText] = useState(true);
   const [doMedia, setDoMedia] = useState(false);
+  const [voice, setVoice] = useState<Voice>("none");
+  const [language, setLanguage] = useState<"Arabic" | "English">("Arabic");
   const [runId, setRunId] = useState<number | null>(null);
   const [job, setJob] = useState<MediaJob | null>(null);
   const [mediaNote, setMediaNote] = useState("");
@@ -36,7 +44,7 @@ export default function RevisePanel({ contentId, clientId }: { contentId: number
   });
   const run = useQuery({
     queryKey: ["agent-run", runId],
-    queryFn: () => api<Run>(`/agent/runs/${runId}`),
+    queryFn: () => api<AgentRun>(`/agent/runs/${runId}`),
     enabled: runId !== null,
     refetchInterval: (q) => (!q.state.data || q.state.data.status === "running" ? 3000 : false),
   });
@@ -53,7 +61,8 @@ export default function RevisePanel({ contentId, clientId }: { contentId: number
   const make = useMutation({
     mutationFn: () => {
       const sameType = (attached.data ?? []).filter((m) => m.type === prev!.type).map((m) => m.id);
-      const request = `${prev!.prompt}\n\nChange requested: ${notes.trim()}`.slice(0, 2000);
+      const base = `${prev!.prompt}\n\nChange requested: ${notes.trim() || "keep everything else the same"}`.slice(0, 1980);
+      const request = isReel ? withVoice(base, voice) : base;
       return mediaApi
         .generate({
           client_id: clientId,
@@ -61,7 +70,7 @@ export default function RevisePanel({ contentId, clientId }: { contentId: number
           request,
           aspect_ratio: prev!.aspect_ratio ?? (isReel ? "9:16" : "1:1"),
           content_id: contentId,
-          ...(isReel ? { language: "Arabic" as const } : {}),
+          ...(isReel ? { language } : {}),
         })
         .then((m) => ({ id: m.id, old: sameType }));
     },
@@ -101,7 +110,9 @@ export default function RevisePanel({ contentId, clientId }: { contentId: number
     if (doMedia && canMakeMedia) make.mutate();
   };
 
-  const canGo = !working && !!notes.trim() && (doText || (doMedia && canMakeMedia));
+ const canGo =
+  !policy.off && !working && (doText || (doMedia && canMakeMedia)) &&
+  (!!notes.trim() || (!doText && doMedia && canMakeMedia && isReel && voice !== "none"));
 
   return (
     <div className="ai-surface" style={{ padding: 20 }}>
@@ -112,21 +123,41 @@ export default function RevisePanel({ contentId, clientId }: { contentId: number
         Write what to change, then choose what the AI should change. The text keeps its old versions. A new image or reel replaces the old one.
       </p>
 
+      {policy.off && (
+        <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 12, border: `1px solid ${p.border}`, color: p.muted, fontSize: 13 }}>
+          {policy.message}
+        </div>
+      )}
+
       <div style={{ display: "grid", gap: 12 }}>
-        <TextArea value={notes} onChange={(e) => setNotes(e.target.value)} dir="auto" placeholder="For example: two people sitting at the same table, snow outside" disabled={working} />
+        <TextArea value={notes} onChange={(e) => setNotes(e.target.value)} dir="auto" placeholder="For example: two people sitting at the same table, snow outside" disabled={working || policy.off} />
 
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 14 }}>
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-            <input type="checkbox" checked={doText} onChange={(e) => setDoText(e.target.checked)} disabled={working} />
+            <input type="checkbox" checked={doText} onChange={(e) => setDoText(e.target.checked)} disabled={working || policy.off} />
             Change the text
           </label>
           {canMakeMedia && (
             <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-              <input type="checkbox" checked={doMedia} onChange={(e) => setDoMedia(e.target.checked)} disabled={working} />
+              <input type="checkbox" checked={doMedia} onChange={(e) => setDoMedia(e.target.checked)} disabled={working || policy.off} />
               Make a new {isReel ? "reel" : "image"}
             </label>
           )}
         </div>
+
+        {doMedia && canMakeMedia && isReel && (
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ width: 190 }}>
+              <VoiceSelect value={voice} onChange={setVoice} noneLabel="Voice: keep as before" disabled={working} />
+            </div>
+            <div style={{ width: 150 }}>
+              <Select aria-label="Voiceover language" value={language} onChange={(e) => setLanguage(e.target.value as "Arabic" | "English")} disabled={working}>
+                <option value="Arabic">Arabic</option>
+                <option value="English">English</option>
+              </Select>
+            </div>
+          </div>
+        )}
 
         {start.isError && <Notice kind="error">{errorText(start.error)}</Notice>}
         {status === "failed" && <Notice kind="error">{run.data?.error || "The AI could not finish the text. Try again."}</Notice>}
@@ -135,17 +166,19 @@ export default function RevisePanel({ contentId, clientId }: { contentId: number
           ? <Notice kind="warning">{run.data.output || "The AI needs more information before it can change this."}</Notice>
           : <Notice kind="success">A new text version is ready. It is now the current one and the status is Draft.</Notice>)}
 
-        {make.isError && <Notice kind="error">{errorText(make.error)}</Notice>}
-        {mstatus === "failed" && <Notice kind="error">{media.data?.error || "The AI could not make the file."} The old file was kept.</Notice>}
+        {make.isError && <Notice kind="error">{mediaErrorText(make.error)}</Notice>}
+        {mstatus === "failed" && <Notice kind="error">{mediaHint(media.data?.error || "The AI could not make the file.")} The old file was kept.</Notice>}
         {mstatus === "ready" && <Notice kind="success">The new {isReel ? "reel" : "image"} is ready and replaced the old one.</Notice>}
+        {mstatus === "ready" && <MediaWarnings m={media.data} />}
         {mediaNote && <Notice kind="warning">{mediaNote}</Notice>}
 
-        {working && !start.isPending && !make.isPending && (
+        {textWorking && !start.isPending && <AgentTimeline run={run.data} />}
+        {mediaWorking && !make.isPending && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: p.aiText }}>
-            <span className="ai-dot" />
+            <AiOrb size={22} />
             <span>
-              The AI is working on it.
-              {mediaWorking && media.data?.metadata?.step ? ` (${media.data.metadata.step.replace(/_/g, " ")})` : ""} You can stay on this page.
+              The AI is making the {isReel ? "reel" : "image"}.
+              {media.data?.metadata?.step ? ` (${media.data.metadata.step.replace(/_/g, " ")})` : ""} You can stay on this page.
             </span>
           </div>
         )}
@@ -156,6 +189,7 @@ export default function RevisePanel({ contentId, clientId }: { contentId: number
             className="ai-button ai-button-solid"
             onClick={send}
             disabled={!canGo}
+            title={policy.off ? policy.message : undefined}
             style={{ padding: "10px 22px", cursor: canGo ? "pointer" : "not-allowed", opacity: canGo ? 1 : 0.55 }}
           >
             {working ? "Working…" : "Send"}

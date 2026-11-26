@@ -21,7 +21,6 @@ export const notificationsApi = {
   readAll: () => api<unknown>("/notifications/read-all", { method: "POST", body: {} }),
 };
 
-// Where a notification leads. Only content has a page so far.
 // Where a notification leads. Only what the backend documents is used; anything else stays not clickable.
 export function notificationTarget(n: AppNotification): string | null {
   const d = n.data ?? {};
@@ -33,6 +32,7 @@ export function notificationTarget(n: AppNotification): string | null {
   if (n.type === "member_joined") return "/team";
   if (n.type === "client_request") return "/requests";
   if (n.type === "request_update") return "/portal";
+  if (n.type === "low_satisfaction" && d.client_id) return `/clients/${d.client_id}`;
   if (d.task_id) return "/tasks";
   return null;
 }
@@ -50,4 +50,5 @@ export const NOTIFICATION_LABEL: Record<string, string> = {
   member_joined: "Joined",
   client_request: "Client request",
   request_update: "Request update",
+  low_satisfaction: "Unhappy client",
 };

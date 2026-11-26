@@ -21,14 +21,12 @@ export const STATUS_LABEL: Record<string, string> = {
 };
 export const CONTENT_STATUSES = Object.keys(STATUS_LABEL) as ContentStatus[];
 export const CONTENT_TYPES = ["post", "reel", "story"] as const;
-export const CONTENT_PLATFORMS = ["instagram", "facebook", "tiktok", "x", "linkedin", "snapchat"] as const;
+export const CONTENT_PLATFORMS = ["instagram"] as const;
 
 export function contentTone(status: string): "good" | "warn" | "bad" | "plain" {
-  
   if (status === "approved" || status === "published") return "good";
   if (status === "in_review" || status === "scheduled") return "warn";
-  if (status === "revision_requested") return "bad";
-    if (status === "failed") return "bad";
+  if (status === "revision_requested" || status === "failed") return "bad";
   return "plain";
 }
 
@@ -70,6 +68,7 @@ export type Approval = {
   requested_from_id: number | null;
   requested_by_id: number | null;
   decided_at: string | null;
+  preferred_publish_at?: string | null; // the client's wish, set with its final approval
   created_at?: string;
   subject_type: string;
   subject_id: number;
@@ -87,7 +86,7 @@ export type DecisionResult = {
 export type PublishJob = {
   id: number;
   content_id: number;
-  status: string; // pending, published, failed, cancelled
+  status: string; // pending, publishing, published, failed, cancelled
   scheduled_at: string;
   published_at: string | null;
   external_post_id: string | null;
@@ -116,7 +115,8 @@ export const contentApi = {
 
 export const approvalsApi = {
   list: () => api<Approval[]>("/approvals"),
-  decide: (id: number, body: { decision: Decision; comment?: string }) =>
+  // preferred_publish_at: only with "approved", only in the client's own approval, must be in the future
+  decide: (id: number, body: { decision: Decision; comment?: string; preferred_publish_at?: string }) =>
     api<DecisionResult>(`/approvals/${id}/decision`, { method: "POST", body }),
 };
 
@@ -140,6 +140,12 @@ export function fmtDateTime(v: string | null | undefined): string {
 // <input type="datetime-local"> gives "2026-11-15T10:30" in the person's own time: send it as a full ISO time.
 export function localToIso(local: string): string {
   return new Date(local).toISOString();
+}
+
+// The other way: an ISO time from the API becomes the "2026-11-15T10:30" an <input type="datetime-local"> wants.
+export function isoToLocal(iso: string): string {
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
 export function isOverdue(job: Pick<PublishJob, "status" | "scheduled_at">): boolean {

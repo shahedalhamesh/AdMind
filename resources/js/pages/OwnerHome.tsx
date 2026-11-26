@@ -9,6 +9,7 @@ import { CLIENT_ROLE, usersApi } from "../services/users";
 import ClientForm from "../components/client/ClientForm";
 import { Badge, Btn, Card, Loading, Notice, errorText } from "../components/Ui";
 import { statusTone } from "./Clients";
+import AtRiskCard from "../components/AtRiskCard";
 
 // Home for the company owner: clients and team, from the same data as the Clients and Team pages.
 export default function OwnerHome() {
@@ -140,7 +141,7 @@ export default function OwnerHome() {
               </Card>
             </div>
           </div>
-
+          {can(user, "clients.view") && <div style={{ marginTop: 30 }}><AtRiskCard /></div>}
           <div style={{ marginTop: 30 }}>
             {sectionTitle("Latest clients", { to: "/clients", label: "See all" })}
             <div style={{ display: "grid", gap: 10 }}>

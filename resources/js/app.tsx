@@ -48,9 +48,12 @@ import TeamAccess from './pages/TeamAccess';
 import Requests from './pages/Requests';
 import Publishing from './pages/Publishing';
 import Profile from './pages/Profile';
+import AiPolicy from './pages/AiPolicy';
 import InsightsGuard from './components/InsightsGuard';
 import AssistantGuard from './components/AssistantGuard';
-
+import Renewals from './pages/Renewals';
+import AuditLog from './pages/AuditLog';
+import AgentPerformance from './pages/AgentPerformance';
 const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
 });
@@ -82,13 +85,45 @@ function App() {
                                     </Route>
 
                                     {/* Agency staff: Owner, Manager, Employee */}
-                                    <Route element={<StaffRoute />}>
+                                                                       <Route element={<StaffRoute />}>
                                         <Route path="/profile" element={<Profile />} />
                                         <Route
                                             path="/publishing"
                                             element={
                                                 <RequirePermission perm="content.view">
                                                     <Publishing />
+                                                </RequirePermission>
+                                            }
+                                        />
+                                        <Route
+                                            path="/ai-policy"
+                                            element={
+                                                <RequirePermission perm="clients.update">
+                                                    <AiPolicy />
+                                                </RequirePermission>
+                                            }
+                                        />
+                                                                                <Route
+                                            path="/audit"
+                                            element={
+                                                <RequirePermission perm="audit.view">
+                                                    <AuditLog />
+                                                </RequirePermission>
+                                            }
+                                        />
+                                                                                <Route
+                                            path="/renewals"
+                                            element={
+                                                <RequirePermission perm="clients.view">
+                                                    <Renewals />
+                                                </RequirePermission>
+                                            }
+                                        />
+                                                                                <Route
+                                            path="/ai-performance"
+                                            element={
+                                                <RequirePermission perm="reports.create">
+                                                    <AgentPerformance />
                                                 </RequirePermission>
                                             }
                                         />

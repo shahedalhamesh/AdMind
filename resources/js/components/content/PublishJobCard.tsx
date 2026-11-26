@@ -57,7 +57,8 @@ export default function PublishJobCard({ job, clientName }: { job: PublishJob; c
           <div style={{ fontWeight: 600, color: overdue ? RED : p.text }}>{fmtDateTime(job.scheduled_at)}</div>
           {job.published_at && <div style={{ color: p.muted }}>Posted {fmtDateTime(job.published_at)}</div>}
         </div>
-        {failed ? <Badge tone="bad">Failed</Badge>
+                {job.status === "publishing" ? <Badge tone="warn">Publishing…</Badge>
+          : failed ? <Badge tone="bad">Failed</Badge>
           : overdue ? <Badge tone="bad">Overdue</Badge>
           : <Badge tone={job.status === "published" ? "good" : job.status === "cancelled" ? "plain" : "warn"}>{job.status}</Badge>}
       </div>

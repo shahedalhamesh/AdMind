@@ -2,14 +2,15 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { clientsApi } from "../../services/clients";
-import { contentApi, localToIso, publishApi } from "../../services/content";
+import { contentApi, fmtDateTime, isoToLocal, localToIso, publishApi } from "../../services/content";
 import type { ContentItem } from "../../services/content";
 import { Btn, Card, Field, Notice, Select, TextInput, errorText, fieldError } from "../Ui";
 import { useRefreshContent } from "./PublishJobCard";
 
 // Approved content: post it now, or choose a time in the future.
+// `preferred` is the time the client asked for when it approved the post (optional).
 // The account is the client's account on the content's platform; the first one is used unless you pick another.
-export default function SchedulePanel({ item }: { item: ContentItem }) {
+export default function SchedulePanel({ item, preferred }: { item: ContentItem; preferred?: string | null }) {
   const refresh = useRefreshContent();
   const [when, setWhen] = useState("");
   const [accountId, setAccountId] = useState("");
@@ -36,6 +37,7 @@ export default function SchedulePanel({ item }: { item: ContentItem }) {
   const busy = schedule.isPending || postNow.isPending;
   const noAccount = accounts.isSuccess && matching.length === 0;
   const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  const wishInFuture = !!preferred && new Date(preferred).getTime() > Date.now();
 
   return (
     <Card>
@@ -43,6 +45,19 @@ export default function SchedulePanel({ item }: { item: ContentItem }) {
       <p style={{ margin: "6px 0 14px", fontSize: 13, opacity: 0.75, lineHeight: 1.5 }}>
         Post it now, or choose when it should be posted.
       </p>
+
+      {preferred && (
+        <div style={{ marginBottom: 14 }}>
+          <Notice kind={wishInFuture ? "success" : "warning"}>
+            The client asked to publish on <strong>{fmtDateTime(preferred)}</strong>.
+            {wishInFuture ? (
+              <>{" "}<Btn small onClick={() => setWhen(isoToLocal(preferred))}>Use the client's time</Btn></>
+            ) : (
+              " That time has already passed, so choose another one."
+            )}
+          </Notice>
+        </div>
+      )}
 
       {noAccount ? (
         <Notice kind="warning">
@@ -72,7 +87,7 @@ export default function SchedulePanel({ item }: { item: ContentItem }) {
           )}
 
           <Field label="Or choose a date and time" error={fieldError(schedule.error, "scheduled_at")}>
-           <TextInput type="datetime-local" lang="en-US" min={now} value={when} onChange={(e) => setWhen(e.target.value)} />
+            <TextInput type="datetime-local" lang="en-US" min={now} value={when} onChange={(e) => setWhen(e.target.value)} />
           </Field>
           {schedule.isError && <Notice kind="error">{errorText(schedule.error)}</Notice>}
           <div>

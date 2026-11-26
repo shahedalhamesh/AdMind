@@ -3,6 +3,15 @@ import type { ContentItem } from "./content";
 
 /* Mirrors section 6 of the backend: POST /agent/chat, GET /agent/runs/{id}, and POST /content with agent_run_id ("Save as content"). */
 
+// One step of a running request. `events` can be empty or incomplete: never depend on it, `status` is what matters.
+export type AgentEvent = {
+  n: number;
+  time: string;
+  agent: string;
+  label: string; // Agent Started, Tool Execution Started, Tool Execution Completed, Agent Final Answer, Retrying, Checking the answer
+  detail: string; // the tool name (delegate_work_to_coworker = handed to another agent) or a short text
+};
+
 export type AgentRun = {
   id: number;
   status: "running" | "succeeded" | "failed";
@@ -15,6 +24,9 @@ export type AgentRun = {
   verification_status: "ok" | "corrected" | "skipped" | "failed" | null;
   original_output: string | null;
   error: string | null;
+  current_agent?: string | null; // the agent working now (null when the run is not running)
+  elapsed_seconds?: number | null;
+  events?: AgentEvent[] | null;
 };
 
 export const agentApi = {

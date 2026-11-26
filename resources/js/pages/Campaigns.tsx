@@ -11,6 +11,7 @@ import type { Campaign } from "../services/campaigns";
 import { Badge, Btn, Field, Loading, Modal, Notice, RED, Select, TextArea, TextInput, errorText, fieldError } from "../components/Ui";
 
 const money = (v: string | number, cur: string) => `${Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${cur}`;
+const day = (v?: string | null) => (v ? new Date(v).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "");
 
 export default function Campaigns() {
   const { p } = usePortalTheme();
@@ -62,7 +63,7 @@ export default function Campaigns() {
               <span dir="auto" style={{ fontSize: 17, fontWeight: 600, overflowWrap: "anywhere" }}>{c.name}</span>
               <Badge tone={campaignTone(c.status)}>{c.status}</Badge>
             </span>
-            <span style={{ fontSize: 13, color: p.muted }}>{[c.client?.name, c.starts_on && c.ends_on ? `${c.starts_on} → ${c.ends_on}` : "", `${c.content_items_count ?? 0} content`].filter(Boolean).join(" · ")}</span>
+            <span style={{ fontSize: 13, color: p.muted }}>{[c.client?.name, c.starts_on && c.ends_on ? `${day(c.starts_on)} → ${day(c.ends_on)}` : "", `${c.content_items_count ?? 0} content`].filter(Boolean).join(" · ")}</span>
             <BudgetBar c={c} />
           </button>
         ))}
@@ -119,7 +120,7 @@ function CampaignDetail({ id, onClose }: { id: number; onClose: () => void }) {
             {d.campaign.channels.map((ch) => <Badge key={ch}>{ch}</Badge>)}
           </div>
           <div dir="auto" style={{ fontSize: 15, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{d.campaign.objective}</div>
-          {d.campaign.starts_on && <div style={{ fontSize: 13, color: p.muted }}>{d.campaign.starts_on} → {d.campaign.ends_on}</div>}
+          {d.campaign.starts_on && <div style={{ fontSize: 13, color: p.muted }}>{day(d.campaign.starts_on)} → {day(d.campaign.ends_on)}</div>}
           <BudgetBar c={d.campaign} />
           <div style={{ fontSize: 14 }}>
             {d.over_budget ? <span style={{ color: RED, fontWeight: 600 }}>Over budget by {money(Math.abs(d.remaining), d.campaign.currency)}</span> : <span>Remaining: <strong>{money(d.remaining, d.campaign.currency)}</strong></span>}
@@ -161,8 +162,8 @@ function CampaignEdit({ c, onCancel, onSaved }: { c: Campaign; onCancel: () => v
   const [budget, setBudget] = useState(String(Number(c.budget)));
   const [spent, setSpent] = useState(String(Number(c.spent)));
   const [status, setStatus] = useState(c.status);
-  const [from, setFrom] = useState(c.starts_on ?? "");
-  const [to, setTo] = useState(c.ends_on ?? "");
+  const [from, setFrom] = useState((c.starts_on ?? "").slice(0, 10));
+  const [to, setTo] = useState((c.ends_on ?? "").slice(0, 10));
 
   const save = useMutation({
     mutationFn: () => {
@@ -173,8 +174,8 @@ function CampaignEdit({ c, onCancel, onSaved }: { c: Campaign; onCancel: () => v
       if (Number(budget) !== Number(c.budget)) body.budget = Number(budget);
       if (Number(spent) !== Number(c.spent)) body.spent = Number(spent);
       if (status !== c.status) body.status = status;
-      if (from && from !== c.starts_on) body.starts_on = from;
-      if (to && to !== c.ends_on) body.ends_on = to;
+      if (from && from !== (c.starts_on ?? "").slice(0, 10)) body.starts_on = from;
+      if (to && to !== (c.ends_on ?? "").slice(0, 10)) body.ends_on = to;
       return campaignsApi.update(c.id, body);
     },
     onSuccess: onSaved,
